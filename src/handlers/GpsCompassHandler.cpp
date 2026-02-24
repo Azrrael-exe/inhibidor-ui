@@ -1,0 +1,73 @@
+#include "GpsCompassHandler.h"
+#include "../pinout.h"
+#include <Arduino.h>
+#include <stdio.h>
+
+static GpsModule*     s_gps     = NULL;
+static CompassModule* s_compass = NULL;
+
+void initStatusHandler(GpsModule* gps, CompassModule* compass) {
+    s_gps     = gps;
+    s_compass = compass;
+}
+
+// GET /status
+void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
+    if (!s_gps || !s_compass) {
+        res.json(503, "{\"error\":\"module not initialized\"}");
+        return;
+    }
+
+    const GpsData&     g = s_gps->getData();
+    const CompassData& c = s_compass->getData();
+
+    char lat[14], lon[14], alt[10], hdg[8];
+    char dt[22];  // "YYYY-MM-DDTHH:MM:SSZ\0"
+
+    dtostrf(g.latitude,  1, 6, lat);
+    dtostrf(g.longitude, 1, 6, lon);
+    dtostrf(g.altitude,  1, 1, alt);
+    dtostrf(c.heading,   1, 1, hdg);
+
+    snprintf(dt, sizeof(dt), "%04u-%02u-%02uT%02u:%02u:%02uZ",
+             (unsigned)g.year,   (unsigned)g.month,  (unsigned)g.day,
+             (unsigned)g.hour,   (unsigned)g.minute,  (unsigned)g.second);
+
+    const char* b0 = digitalRead(RF_BAND_0) ? "true" : "false";
+    const char* b1 = digitalRead(RF_BAND_1) ? "true" : "false";
+    const char* b2 = digitalRead(RF_BAND_2) ? "true" : "false";
+    const char* b3 = digitalRead(RF_BAND_3) ? "true" : "false";
+    const char* b4 = digitalRead(RF_BAND_4) ? "true" : "false";
+    const char* b5 = digitalRead(RF_BAND_5) ? "true" : "false";
+    const char* b6 = digitalRead(RF_BAND_6) ? "true" : "false";
+
+    char body[350];
+    snprintf(body, sizeof(body),
+        "{"
+          "\"gps\":{"
+            "\"lat\":\"%s\","
+            "\"lon\":\"%s\","
+            "\"alt\":\"%s\","
+            "\"datetime\":\"%s\""
+          "},"
+          "\"heading\":\"%s\","
+          "\"navigation\":{"
+            "\"azimuth\":\"0.0\","
+            "\"elevation\":\"0.0\""
+          "},"
+          "\"power\":{"
+            "\"band_0\":%s,"
+            "\"band_1\":%s,"
+            "\"band_2\":%s,"
+            "\"band_3\":%s,"
+            "\"band_4\":%s,"
+            "\"band_5\":%s,"
+            "\"band_6\":%s"
+          "}"
+        "}",
+        lat, lon, alt, dt, hdg,
+        b0, b1, b2, b3, b4, b5, b6
+    );
+
+    res.json(200, body);
+}

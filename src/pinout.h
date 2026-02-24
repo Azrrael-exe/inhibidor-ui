@@ -1,0 +1,32 @@
+#ifndef PINOUT_H
+#define PINOUT_H
+
+#define AZIMUTH_FORWARD_PIN A2
+#define AZIMUTH_BACKWARD_PIN A3
+#define ELEVATION_FORWARD_PIN A4
+#define ELEVATION_BACKWARD_PIN A5
+#define RF_POWER_PIN A1
+
+// #define CONTROLLINO_D0 2
+// #define CONTROLLINO_D1 3
+// #define CONTROLLINO_D2 4
+// #define CONTROLLINO_D3 5
+// #define CONTROLLINO_D4 6
+// #define CONTROLLINO_D5 7
+// #define CONTROLLINO_D6 8
+// #define CONTROLLINO_D7 9
+// #define CONTROLLINO_D8 10
+// #define CONTROLLINO_D9 11
+// #define CONTROLLINO_D10 12
+// #define CONTROLLINO_D11 13
+
+#define RF_BAND_0 2
+
+#define RF_BAND_1 3
+#define RF_BAND_2 4
+#define RF_BAND_3 5
+#define RF_BAND_4 6
+#define RF_BAND_5 7
+#define RF_BAND_6 8
+
+#endif
