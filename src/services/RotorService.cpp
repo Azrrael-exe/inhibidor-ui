@@ -2,7 +2,7 @@
 
 // Set to 1 to enable G5500 debug logs on Serial.
 // Keep at 0 in production — logs share the Serial port with G5500 binary frames.
-#define ROTOR_DEBUG 0
+#define ROTOR_DEBUG 1
 
 #if ROTOR_DEBUG
 #  define ROTOR_LOG(msg)       Serial.print(F("[G5500] ")); Serial.println(F(msg))
@@ -54,12 +54,20 @@ bool RotorService::readStatus(RotorStatus& out) {
     _txPack.addData(0xCC, (int16_t)0xC2);
     _txPack.write(*_serial);
 
-    // available() blocks via Stream::readBytes which respects setTimeout.
-    // The 200ms timeout applies once bytes start arriving.
-    _serial->setTimeout(200);
-    // inp_buffer is overwritten by available() on success — clear() is not needed for RX.
+    // DataPack::available() first calls inp.available() (non-blocking).
+    // If no bytes are in the buffer yet it returns false immediately — setTimeout() is irrelevant.
+    // We must wait until the rotor-controller's response starts arriving before calling available().
+    unsigned long t0 = millis();
+    while (!_serial->available()) {
+        if (millis() - t0 > 500UL) {
+            ROTOR_LOG("STATUS timeout (no response)");
+            return false;
+        }
+    }
+
+    // Bytes are in the buffer — available() will read and parse the full packet.
     if (!_rxPack.available(*_serial)) {
-        ROTOR_LOG("STATUS timeout");
+        ROTOR_LOG("STATUS parse error");
         return false;
     }
     if (!_rxPack.hasKey(0xAB) || !_rxPack.hasKey(0xBC)) {
