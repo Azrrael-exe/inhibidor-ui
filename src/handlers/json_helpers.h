@@ -48,3 +48,36 @@ inline int jsonGetBool(const char* json, const char* key, int defaultVal) {
     if (strncmp(p, "false", 5) == 0) return 0;
     return defaultVal;
 }
+
+/**
+ * Extract a float value from a flat JSON object by key name.
+ * Returns defaultVal if the key is not found.
+ *
+ * Example: jsonGetFloat("{\"az\":180.5}", "az", 0.0f) → 180.5
+ */
+inline float jsonGetFloat(const char* json, const char* key, float defaultVal) {
+    char pattern[WS_PARAMS_LEN / 2];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+
+    const char* p = strstr(json, pattern);
+    if (!p) return defaultVal;
+
+    p += strlen(pattern);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != ':') return defaultVal;
+    p++;
+    while (*p == ' ' || *p == '\t') p++;
+
+    return (float)atof(p);
+}
+
+/**
+ * Returns true if the key exists anywhere in the JSON object.
+ *
+ * Example: jsonHasKey("{\"az\":180.5}", "az") → true
+ */
+inline bool jsonHasKey(const char* json, const char* key) {
+    char pattern[WS_PARAMS_LEN / 2];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    return strstr(json, pattern) != nullptr;
+}

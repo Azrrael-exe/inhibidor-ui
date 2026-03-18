@@ -16,7 +16,7 @@
  * Maximum length for request params / body including null terminator.
  * Used for GET query strings and POST JSON bodies.
  */
-#define WS_PARAMS_LEN       128
+#define WS_PARAMS_LEN       256
 
 /**
  * Line buffer for parsing request line and headers one line at a time.
@@ -44,7 +44,7 @@ enum HttpMethod : uint8_t {
  *                    e.g. '{"band":3}'
  *
  * Stack-allocated inside WebServer::update() during dispatch.
- * Memory: 1 + 64 + 128 = 193 bytes.
+ * Memory: 1 + 64 + 256 = 321 bytes.
  */
 struct HttpRequest {
     HttpMethod method;
