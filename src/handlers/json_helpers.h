@@ -51,6 +51,7 @@ inline int jsonGetBool(const char* json, const char* key, int defaultVal) {
 
 /**
  * Extract a float value from a flat JSON object by key name.
+ * Handles optional whitespace around ':'.
  * Returns defaultVal if the key is not found.
  *
  * Example: jsonGetFloat("{\"az\":180.5}", "az", 0.0f) → 180.5

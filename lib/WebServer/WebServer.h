@@ -150,7 +150,7 @@ enum ParseState : uint8_t {
  * All responses are JSON (Content-Type: application/json).
  *
  * Static SRAM footprint: ~466 bytes.
- * Peak stack during dispatch: ~196 bytes (HttpRequest + HttpResponse).
+ * Peak stack during dispatch: ~324 bytes (HttpRequest + HttpResponse).
  *
  * Usage:
  *   WebServer server(80);
