@@ -136,3 +136,22 @@ Los campos no enviados no modifican el estado actual de esa banda.
 | QMC5883L | I2C (0x0D) | Compás magnético |
 | G5500 | Serial @ 115200 | Controlador de rotor (azimuth/elevación) |
 | W5100 | SPI | Módulo Ethernet |
+
+---
+
+## Known Issues
+
+### `ard-llp` include guard typo
+
+The vendored `ard-llp` library has a typo in `llp.h` — the include guard macro is `#define fame_h` instead of `#define frame_h`, which means the guard never fires and the header can be included multiple times causing `DataPack` redefinition errors.
+
+**Fix:** After PlatformIO downloads the dependency (i.e. after the first `pio run`), manually patch `.pio/libdeps/controllino_maxi/ard-llp/llp.h` line 2:
+
+```
+// Change:
+#define fame_h
+// To:
+#define frame_h
+```
+
+This must be re-applied after `pio run --target clean` or a fresh clone.
