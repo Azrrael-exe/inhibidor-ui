@@ -4,6 +4,7 @@ RotorService::RotorService(HardwareSerial* serial)
     : _serial(serial) {}
 
 void RotorService::gotoAzimuth(float degrees) {
+    // clear() before addData is explicit defensive init; write() also calls clear() internally.
     _txPack.clear();
     _txPack.addData(0xDA, (int16_t)(degrees * 10));
     _txPack.write(*_serial);
@@ -43,6 +44,7 @@ bool RotorService::readStatus(RotorStatus& out) {
     if (!_rxPack.available(*_serial)) return false;
     if (!_rxPack.hasKey(0xAB) || !_rxPack.hasKey(0xBC)) return false;
 
+    // getData returns uint16_t; G5500 angles are always non-negative so this is safe.
     out.azimuthAngle   = _rxPack.getData(0xAB) / 10.0f;
     out.elevationAngle = _rxPack.getData(0xBC) / 10.0f;
     return true;
