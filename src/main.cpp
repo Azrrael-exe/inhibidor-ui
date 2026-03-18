@@ -106,6 +106,8 @@ void loop() {
     gpsModule.update();
     compassModule.update();
 
+    rotorService.update();
+
     azimuthForwardSwitch.update();
     azimuthBackwardSwitch.update();
     elevationForwardSwitch.update();

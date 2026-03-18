@@ -13,7 +13,11 @@
 #endif
 
 RotorService::RotorService(HardwareSerial* serial)
-    : _serial(serial) {}
+    : _serial(serial)
+    , _pollState(POLL_IDLE)
+    , _lastPollMs(0)
+    , _cachedStatus({0.0f, 0.0f})
+    , _hasStatus(false) {}
 
 void RotorService::gotoAzimuth(float degrees) {
     ROTOR_LOG_F("CMD goto_az deg=", degrees);
@@ -44,47 +48,57 @@ void RotorService::stopElevation() {
     _txPack.write(*_serial);
 }
 
-bool RotorService::readStatus(RotorStatus& out) {
-    // Flush RX buffer
-    while (_serial->available()) _serial->read();
+void RotorService::update() {
+    unsigned long now = millis();
 
-    // Send feedback poll — log before sending, not during receive window
-    ROTOR_LOG("CMD poll_status");
-    _txPack.clear();
-    _txPack.addData(0xCC, (int16_t)0xC2);
-    _txPack.write(*_serial);
-
-    // DataPack::available() first calls inp.available() (non-blocking).
-    // If no bytes are in the buffer yet it returns false immediately — setTimeout() is irrelevant.
-    // We must wait until the rotor-controller's response starts arriving before calling available().
-    unsigned long t0 = millis();
-    while (!_serial->available()) {
-        if (millis() - t0 > 500UL) {
-            ROTOR_LOG("STATUS timeout (no response)");
-            return false;
+    if (_pollState == POLL_IDLE) {
+        if (now - _lastPollMs >= POLL_INTERVAL_MS) {
+            while (_serial->available()) _serial->read();  // flush stale bytes
+            ROTOR_LOG("CMD poll_status");
+            _txPack.clear();
+            _txPack.addData(0xCC, (int16_t)0xC2);
+            _txPack.write(*_serial);
+            _lastPollMs = now;
+            _pollState  = POLL_SENT;
         }
+        return;
     }
 
-    // Bytes are in the buffer — available() will read and parse the full packet.
-    if (!_rxPack.available(*_serial)) {
-        ROTOR_LOG("STATUS parse error");
-        return false;
-    }
-    if (!_rxPack.hasKey(0xAB) || !_rxPack.hasKey(0xBC)) {
-        ROTOR_LOG("STATUS missing keys");
-        return false;
-    }
-
-    // getData returns uint16_t; G5500 angles are always non-negative so this is safe.
-    out.azimuthAngle   = _rxPack.getData(0xAB) / 10.0f;
-    out.elevationAngle = _rxPack.getData(0xBC) / 10.0f;
-
+    // POLL_SENT: check if response has arrived (non-blocking)
+    if (_serial->available()) {
+        if (_rxPack.available(*_serial)) {
+            if (_rxPack.hasKey(0xAB) && _rxPack.hasKey(0xBC)) {
+                // getData returns uint16_t; G5500 angles are always non-negative so this is safe.
+                _cachedStatus.azimuthAngle   = _rxPack.getData(0xAB) / 10.0f;
+                _cachedStatus.elevationAngle = _rxPack.getData(0xBC) / 10.0f;
+                _hasStatus = true;
 #if ROTOR_DEBUG
-    Serial.print(F("[G5500] STATUS az="));
-    Serial.print(out.azimuthAngle);
-    Serial.print(F(" el="));
-    Serial.println(out.elevationAngle);
+                Serial.print(F("[G5500] STATUS az="));
+                Serial.print(_cachedStatus.azimuthAngle);
+                Serial.print(F(" el="));
+                Serial.println(_cachedStatus.elevationAngle);
 #endif
+            } else {
+                ROTOR_LOG("STATUS missing keys");
+            }
+        } else {
+            ROTOR_LOG("STATUS parse error");
+        }
+        _pollState = POLL_IDLE;
+        return;
+    }
 
-    return true;
+    // No bytes yet — check for timeout
+    if (now - _lastPollMs > POLL_TIMEOUT_MS) {
+        ROTOR_LOG("STATUS timeout (no response)");
+        _pollState = POLL_IDLE;
+    }
+}
+
+bool RotorService::hasStatus() const {
+    return _hasStatus;
+}
+
+const RotorStatus& RotorService::getStatus() const {
+    return _cachedStatus;
 }

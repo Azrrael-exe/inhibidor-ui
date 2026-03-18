@@ -17,15 +17,28 @@ public:
     void stopAzimuth();                 // key 0xAA, value 0xA0
     void stopElevation();               // key 0xBB, value 0xB0
 
-    // Send feedback poll (0xCC/0xC2), parse response.
-    // Note: setTimeout(200) only takes effect if at least one byte has already arrived
-    // in the RX buffer. If the G5500 has not started responding, available() returns
-    // false immediately without waiting. 200ms is an upper bound, not a guarantee.
-    // Returns false on timeout, parse failure, or missing keys.
-    bool readStatus(RotorStatus& out);
+    // Async status polling — call every loop().
+    // Sends a feedback poll every POLL_INTERVAL_MS and caches the response.
+    // Non-blocking: never waits for Serial bytes.
+    void update();
+
+    // Returns true if at least one valid status has been received.
+    bool hasStatus() const;
+
+    // Returns the last cached rotor status. Check hasStatus() first.
+    const RotorStatus& getStatus() const;
 
 private:
     HardwareSerial* _serial;
     DataPack        _txPack;  // member (182 bytes) — not stack-allocated
     DataPack        _rxPack;  // member (182 bytes) — not stack-allocated
+
+    enum PollState : uint8_t { POLL_IDLE, POLL_SENT };
+    PollState     _pollState;
+    unsigned long _lastPollMs;
+    RotorStatus   _cachedStatus;
+    bool          _hasStatus;
+
+    static const unsigned long POLL_INTERVAL_MS = 2000UL;
+    static const unsigned long POLL_TIMEOUT_MS  =  500UL;
 };
