@@ -25,7 +25,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     const CompassData& c = s_compass->getData();
 
     char lat[14], lon[14], alt[10], hdg[8];
-    char dt[22];
+    char dt[22];  // "YYYY-MM-DDTHH:MM:SSZ\0"
 
     dtostrf(g.latitude,  1, 6, lat);
     dtostrf(g.longitude, 1, 6, lon);
