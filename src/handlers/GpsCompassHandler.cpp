@@ -1,14 +1,17 @@
 #include "GpsCompassHandler.h"
+#include "../use_cases/GetRotorStatusUseCase.h"
 #include "../pinout.h"
 #include <Arduino.h>
 #include <stdio.h>
 
-static GpsModule*     s_gps     = NULL;
-static CompassModule* s_compass = NULL;
+static GpsModule*     s_gps     = nullptr;
+static CompassModule* s_compass = nullptr;
+static RotorService*  s_rotor   = nullptr;
 
-void initStatusHandler(GpsModule* gps, CompassModule* compass) {
+void initStatusHandler(GpsModule* gps, CompassModule* compass, RotorService* rotor) {
     s_gps     = gps;
     s_compass = compass;
+    s_rotor   = rotor;
 }
 
 // GET /status
@@ -22,7 +25,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     const CompassData& c = s_compass->getData();
 
     char lat[14], lon[14], alt[10], hdg[8];
-    char dt[22];  // "YYYY-MM-DDTHH:MM:SSZ\0"
+    char dt[22];
 
     dtostrf(g.latitude,  1, 6, lat);
     dtostrf(g.longitude, 1, 6, lon);
@@ -33,6 +36,18 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
              (unsigned)g.year,   (unsigned)g.month,  (unsigned)g.day,
              (unsigned)g.hour,   (unsigned)g.minute,  (unsigned)g.second);
 
+    // Rotor status — query G5500; degrade to "0.0" on timeout or if not connected
+    char nav_az[8] = "0.0";
+    char nav_el[8] = "0.0";
+    if (s_rotor) {
+        RotorStatus rs;
+        GetRotorStatusUseCase getStatus(s_rotor);
+        if (getStatus.execute(rs)) {
+            dtostrf(rs.azimuthAngle,   1, 1, nav_az);
+            dtostrf(rs.elevationAngle, 1, 1, nav_el);
+        }
+    }
+
     const char* b0 = digitalRead(RF_BAND_0) ? "true" : "false";
     const char* b1 = digitalRead(RF_BAND_1) ? "true" : "false";
     const char* b2 = digitalRead(RF_BAND_2) ? "true" : "false";
@@ -41,7 +56,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     const char* b5 = digitalRead(RF_BAND_5) ? "true" : "false";
     const char* b6 = digitalRead(RF_BAND_6) ? "true" : "false";
 
-    char body[350];
+    char body[400];
     snprintf(body, sizeof(body),
         "{"
           "\"gps\":{"
@@ -52,8 +67,8 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
           "},"
           "\"heading\":\"%s\","
           "\"navigation\":{"
-            "\"azimuth\":\"0.0\","
-            "\"elevation\":\"0.0\""
+            "\"azimuth\":\"%s\","
+            "\"elevation\":\"%s\""
           "},"
           "\"power\":{"
             "\"band_0\":%s,"
@@ -66,6 +81,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
           "}"
         "}",
         lat, lon, alt, dt, hdg,
+        nav_az, nav_el,
         b0, b1, b2, b3, b4, b5, b6
     );
 

@@ -3,5 +3,8 @@
 #include "../modules/GpsModule.h"
 #include "../modules/CompassModule.h"
 
-void initStatusHandler(GpsModule* gps, CompassModule* compass);
+// Forward declaration — full definition pulled in by GpsCompassHandler.cpp
+class RotorService;
+
+void initStatusHandler(GpsModule* gps, CompassModule* compass, RotorService* rotor = nullptr);
 void handleGetStatus(const HttpRequest& req, HttpResponse& res);
