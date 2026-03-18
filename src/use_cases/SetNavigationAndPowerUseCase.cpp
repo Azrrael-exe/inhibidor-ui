@@ -1,5 +1,6 @@
 #include "SetNavigationAndPowerUseCase.h"
 #include "../pinout.h"
+#include <string.h>
 
 static const uint8_t BAND_PINS[7] = {
     RF_BAND_0, RF_BAND_1, RF_BAND_2, RF_BAND_3,
@@ -15,6 +16,7 @@ bool SetNavigationAndPowerUseCase::execute(
     int8_t   bands[7],
     char*    errorMsg, uint8_t errorMsgLen
 ) {
+    if (errorMsgLen == 0) return false;
     if (hasAz && (az < 0.0f || az > 360.0f)) {
         strncpy(errorMsg, "azimuth out of range [0,360]", errorMsgLen - 1);
         errorMsg[errorMsgLen - 1] = '\0';
