@@ -9,7 +9,7 @@ Expone una API HTTP en el puerto 80 para monitoreo y control del sistema.
 
 Base URL: `http://<ip-del-dispositivo>`
 
-Todas las respuestas son JSON. En caso de error, la respuesta incluye un campo `error` con descripción del problema (HTTP 4xx).
+Todas las respuestas son JSON. En caso de error, la respuesta incluye un campo `error` con descripción del problema (HTTP 4xx/5xx).
 
 ---
 
@@ -29,8 +29,8 @@ Retorna el estado completo del sistema.
   },
   "heading": "273.4",
   "navigation": {
-    "azimuth": "0.0",
-    "elevation": "0.0"
+    "azimuth": "182.3",
+    "elevation": "44.7"
   },
   "power": {
     "band_0": true,
@@ -51,60 +51,29 @@ Retorna el estado completo del sistema.
 | `gps.alt` | string | Altitud en metros |
 | `gps.datetime` | string | Fecha y hora UTC en formato ISO 8601 |
 | `heading` | string | Rumbo del compás en grados (0–360) |
-| `navigation.azimuth` | string | Azimuth objetivo actual en grados (0–360) |
-| `navigation.elevation` | string | Elevación objetivo actual en grados (0–90) |
+| `navigation.azimuth` | string | Ángulo actual del rotor en azimuth (0–360°). `"0.0"` si el G5500 no responde. |
+| `navigation.elevation` | string | Ángulo actual del rotor en elevación (0–90°). `"0.0"` si el G5500 no responde. |
 | `power.band_0` … `power.band_6` | boolean | Estado actual de cada banda de RF |
+
+**Ejemplo:**
+
+```bash
+curl http://<ip>/status
+```
 
 ---
 
-### POST /set-navigation
+### POST /set-navigation-and-power
 
-Establece los valores de azimuth y elevación para orientar el sistema.
+Envía ángulos de goto al rotor y/o activa/desactiva bandas de RF en un solo request.
+Todos los campos son opcionales — los campos omitidos no modifican el estado actual.
 
 **Request body:**
 
 ```json
 {
   "azimuth": 180.0,
-  "elevation": 45.0
-}
-```
-
-| Campo | Tipo | Rango | Requerido |
-|-------|------|-------|-----------|
-| `azimuth` | float | 0.0 – 360.0 | Sí |
-| `elevation` | float | 0.0 – 90.0 | Sí |
-
-**Response:**
-
-```json
-{ "status": "ok" }
-```
-
----
-
-### POST /stop-navigation
-
-Detiene completamente el movimiento del sistema. No requiere body.
-
-**Response:**
-
-```json
-{ "status": "ok" }
-```
-
----
-
-### POST /set-power
-
-Activa o desactiva las bandas de RF del sistema (bandas 1–6).
-Se puede controlar una sola banda o todas en un mismo request.
-Los campos no enviados no modifican el estado actual de esa banda.
-
-**Request body:**
-
-```json
-{
+  "elevation": 45.0,
   "band_0": true,
   "band_1": false,
   "band_2": true,
@@ -115,14 +84,54 @@ Los campos no enviados no modifican el estado actual de esa banda.
 }
 ```
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `band_0` … `band_6` | boolean | `true` activa la banda, `false` la desactiva (todos opcionales) |
+| Campo | Tipo | Rango | Descripción |
+|-------|------|-------|-------------|
+| `azimuth` | float | 0.0 – 360.0 | Ángulo de destino en azimuth (opcional) |
+| `elevation` | float | 0.0 – 90.0 | Ángulo de destino en elevación (opcional) |
+| `band_0` … `band_6` | boolean | — | `true` activa la banda, `false` la desactiva (opcionales) |
 
 **Response:**
 
 ```json
 { "status": "ok" }
+```
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 400 | `azimuth` fuera de rango `[0, 360]` |
+| 400 | `elevation` fuera de rango `[0, 90]` |
+| 503 | Rotor no disponible (no inicializado) |
+
+**Ejemplos:**
+
+```bash
+# Solo ángulos
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"azimuth":180.0,"elevation":45.0}'
+
+# Solo bandas de RF (band_0 ON, resto sin cambio)
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"band_0":true}'
+
+# Apagar todas las bandas
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"band_0":false,"band_1":false,"band_2":false,"band_3":false,"band_4":false,"band_5":false,"band_6":false}'
+
+# Combinado: ángulos + todas las bandas ON
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"azimuth":90.0,"elevation":30.0,"band_0":true,"band_1":true,"band_2":true,"band_3":true,"band_4":true,"band_5":true,"band_6":true}'
+
+# Error esperado — azimuth fuera de rango
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"azimuth":400.0}'
+# → HTTP 400  {"error":"azimuth out of range [0,360]"}
 ```
 
 ---
