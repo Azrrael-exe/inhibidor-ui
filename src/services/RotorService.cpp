@@ -20,32 +20,33 @@ RotorService::RotorService(HardwareSerial* serial)
     , _hasStatus(false) {}
 
 void RotorService::gotoAzimuth(float degrees) {
-    ROTOR_LOG_F("CMD goto_az deg=", degrees);
+    // NOTE: do NOT log before write — ASCII on the G5500 serial bus corrupts LLP framing.
     // clear() before addData is explicit defensive init; write() also calls clear() internally.
     _txPack.clear();
     _txPack.addData(0xDA, (int16_t)(degrees * 10));
     _txPack.write(*_serial);
+    ROTOR_LOG_F("CMD goto_az deg=", degrees);
 }
 
 void RotorService::gotoElevation(float degrees) {
-    ROTOR_LOG_F("CMD goto_el deg=", degrees);
     _txPack.clear();
     _txPack.addData(0xDB, (int16_t)(degrees * 10));
     _txPack.write(*_serial);
+    ROTOR_LOG_F("CMD goto_el deg=", degrees);
 }
 
 void RotorService::stopAzimuth() {
-    ROTOR_LOG("CMD stop_az");
     _txPack.clear();
     _txPack.addData(0xAA, (int16_t)0xA0);
     _txPack.write(*_serial);
+    ROTOR_LOG("CMD stop_az");
 }
 
 void RotorService::stopElevation() {
-    ROTOR_LOG("CMD stop_el");
     _txPack.clear();
     _txPack.addData(0xBB, (int16_t)0xB0);
     _txPack.write(*_serial);
+    ROTOR_LOG("CMD stop_el");
 }
 
 void RotorService::update() {
@@ -54,18 +55,20 @@ void RotorService::update() {
     if (_pollState == POLL_IDLE) {
         if (now - _lastPollMs >= POLL_INTERVAL_MS) {
             while (_serial->available()) _serial->read();  // flush stale bytes
-            ROTOR_LOG("CMD poll_status");
             _txPack.clear();
             _txPack.addData(0xCC, (int16_t)0xC2);
             _txPack.write(*_serial);
+            ROTOR_LOG("CMD poll_status");  // log AFTER write — never before binary frames
             _lastPollMs = now;
             _pollState  = POLL_SENT;
         }
         return;
     }
 
-    // POLL_SENT: check if response has arrived (non-blocking)
+    // POLL_SENT: check if response has arrived (non-blocking).
+    // Set a short timeout so readBytes() inside available() doesn't hold up loop().
     if (_serial->available()) {
+        _serial->setTimeout(50);
         if (_rxPack.available(*_serial)) {
             if (_rxPack.hasKey(0xAB) && _rxPack.hasKey(0xBC)) {
                 // getData returns uint16_t; G5500 angles are always non-negative so this is safe.
