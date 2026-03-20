@@ -1,5 +1,6 @@
 #include <Arduino.h>
 
+#include "logger.h"
 #include "pinout.h"
 #include <DigitalSwitch.h>
 #include "callback.h"
@@ -32,12 +33,12 @@ DigitalSwitch elevationForwardSwitch(ELEVATION_FORWARD_PIN);
 DigitalSwitch elevationBackwardSwitch(ELEVATION_BACKWARD_PIN);
 DigitalSwitch rfPowerSwitch(RF_POWER_PIN);
 
-G5500CommandContext azimuthForwardContext   = { &Serial, AZIMUTH_HEADER,   AZIMUTH_FORWARD   };
-G5500CommandContext azimuthBackwardContext  = { &Serial, AZIMUTH_HEADER,   AZIMUTH_BACKWARD  };
-G5500CommandContext azimuthStopContext      = { &Serial, AZIMUTH_HEADER,   AZIMUTH_STOP      };
-G5500CommandContext elevationForwardContext  = { &Serial, ELEVATION_HEADER, ELEVATION_FORWARD  };
-G5500CommandContext elevationBackwardContext = { &Serial, ELEVATION_HEADER, ELEVATION_BACKWARD };
-G5500CommandContext elevationStopContext     = { &Serial, ELEVATION_HEADER, ELEVATION_STOP     };
+G5500CommandContext azimuthForwardContext   = { &Serial, AZIMUTH_HEADER,   AZIMUTH_FORWARD,   &rotorService };
+G5500CommandContext azimuthBackwardContext  = { &Serial, AZIMUTH_HEADER,   AZIMUTH_BACKWARD,  &rotorService };
+G5500CommandContext azimuthStopContext      = { &Serial, AZIMUTH_HEADER,   AZIMUTH_STOP,      &rotorService };
+G5500CommandContext elevationForwardContext  = { &Serial, ELEVATION_HEADER, ELEVATION_FORWARD,  &rotorService };
+G5500CommandContext elevationBackwardContext = { &Serial, ELEVATION_HEADER, ELEVATION_BACKWARD, &rotorService };
+G5500CommandContext elevationStopContext     = { &Serial, ELEVATION_HEADER, ELEVATION_STOP,     &rotorService };
 
 void activateRFPower(void* context) {
     int8_t bands[7] = { 1, 1, 1, 1, 1, 1, 1 };
@@ -57,12 +58,13 @@ void setup() {
 
     if (Ethernet.begin(mac) == 0) {
         Ethernet.begin(mac, fallbackIp);
-        Serial.print(F("[WebServer] DHCP failed, using static IP: "));
+        LOG_F("WebServer", "DHCP failed, using static IP: ", Ethernet.localIP());
     } else {
-        Serial.print(F("[WebServer] DHCP OK, IP: "));
+        LOG_F("WebServer", "DHCP OK, IP: ", Ethernet.localIP());
     }
-    Serial.println(Ethernet.localIP());
     delay(1000);
+
+    Logger::init(&rotorService);
 
     compassModule.begin();
     initStatusHandler(&gpsModule, &compassModule, &rotorService);
@@ -80,11 +82,13 @@ void setup() {
     pinMode(RF_BAND_5, OUTPUT);
     pinMode(RF_BAND_6, OUTPUT);
 
-    azimuthForwardSwitch.begin();
-    azimuthBackwardSwitch.begin();
-    elevationForwardSwitch.begin();
-    elevationBackwardSwitch.begin();
-    rfPowerSwitch.begin();
+    // CONTROLLINO MAXI industrial inputs are active-HIGH (0–24V).
+    // INPUT_PULLUP inverts the logic (press=LOW=onTurnOff). Use INPUT instead.
+    azimuthForwardSwitch.begin(INPUT);
+    azimuthBackwardSwitch.begin(INPUT);
+    elevationForwardSwitch.begin(INPUT);
+    elevationBackwardSwitch.begin(INPUT);
+    rfPowerSwitch.begin(INPUT);
 
     azimuthForwardSwitch.setOnTurnOn(sendG5500Command, &azimuthForwardContext);
     azimuthBackwardSwitch.setOnTurnOn(sendG5500Command, &azimuthBackwardContext);

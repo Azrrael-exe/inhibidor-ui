@@ -41,5 +41,5 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
         return;
     }
 
-    res.json(200, "{\"status\":\"ok\"}");
+    res.json(200, "{\"status\":\"queued\"}");
 }

@@ -7,18 +7,29 @@ struct RotorStatus {
     float elevationAngle;  // degrees (G5500 key 0xBC, raw uint16_t / 10.0)
 };
 
+struct RotorCommand {
+    bool  hasAz;
+    float az;
+    bool  hasEl;
+    float el;
+    bool  pending;
+};
+
 class RotorService {
 public:
-    explicit RotorService(HardwareSerial* serial);
+    // pollIntervalMs: how often to request a status update from the G5500.
+    explicit RotorService(HardwareSerial* serial, unsigned long pollIntervalMs = 2000UL);
 
-    // Send goto commands (angle encoded as int16_t * 10)
-    void gotoAzimuth(float degrees);    // key 0xDA
-    void gotoElevation(float degrees);  // key 0xDB
-    void stopAzimuth();                 // key 0xAA, value 0xA0
-    void stopElevation();               // key 0xBB, value 0xB0
+    // Enqueue a goto command (az and/or el). Overwrites any previously pending
+    // command — only the last call before the next update() is sent.
+    // Encoded as int16_t * 10 in a single LLP frame (keys 0xDA and/or 0xDB).
+    void enqueuePosition(bool hasAz, float az, bool hasEl, float el);
+
+    void stopAzimuth();   // key 0xAA, value 0xA0 — fire-and-forget, sent immediately
+    void stopElevation(); // key 0xBB, value 0xB0 — fire-and-forget, sent immediately
 
     // Async status polling — call every loop().
-    // Sends a feedback poll every POLL_INTERVAL_MS and caches the response.
+    // Drains any pending command first, then sends a status poll every pollIntervalMs.
     // Non-blocking: never waits for Serial bytes.
     void update();
 
@@ -28,6 +39,11 @@ public:
     // Returns the last cached rotor status. Check hasStatus() first.
     const RotorStatus& getStatus() const;
 
+    // Returns true when Serial is not actively used by the rotor (POLL_IDLE).
+    // Use this to gate ASCII logs — printing during POLL_SENT sends bytes
+    // on the G5500 TX line that corrupt LLP framing.
+    bool isSerialFree() const;
+
 private:
     HardwareSerial* _serial;
     DataPack        _txPack;  // member (182 bytes) — not stack-allocated
@@ -36,9 +52,10 @@ private:
     enum PollState : uint8_t { POLL_IDLE, POLL_SENT };
     PollState     _pollState;
     unsigned long _lastPollMs;
+    unsigned long _pollIntervalMs;
     RotorStatus   _cachedStatus;
     bool          _hasStatus;
+    RotorCommand  _pendingCmd;
 
-    static const unsigned long POLL_INTERVAL_MS = 2000UL;
-    static const unsigned long POLL_TIMEOUT_MS  =  500UL;
+    static const unsigned long POLL_TIMEOUT_MS = 500UL;
 };

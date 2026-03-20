@@ -28,8 +28,7 @@ bool SetNavigationAndPowerUseCase::execute(
         return false;
     }
 
-    if (hasAz) _service->gotoAzimuth(az);
-    if (hasEl)  _service->gotoElevation(el);
+    _service->enqueuePosition(hasAz, az, hasEl, el);
 
     // bands[i] == -1 means the key was absent — leave that pin unchanged.
     for (uint8_t i = 0; i < 7; i++) {

@@ -1,64 +1,55 @@
 #include "RotorService.h"
+#include "../logger.h"
 
-// Set to 1 to enable G5500 debug logs on Serial.
-// Keep at 0 in production — logs share the Serial port with G5500 binary frames.
-#define ROTOR_DEBUG 1
-
-#if ROTOR_DEBUG
-#  define ROTOR_LOG(msg)       Serial.print(F("[G5500] ")); Serial.println(F(msg))
-#  define ROTOR_LOG_F(msg, v)  Serial.print(F("[G5500] ")); Serial.print(F(msg)); Serial.println(v)
-#else
-#  define ROTOR_LOG(msg)
-#  define ROTOR_LOG_F(msg, v)
-#endif
-
-RotorService::RotorService(HardwareSerial* serial)
+RotorService::RotorService(HardwareSerial* serial, unsigned long pollIntervalMs)
     : _serial(serial)
     , _pollState(POLL_IDLE)
     , _lastPollMs(0)
+    , _pollIntervalMs(pollIntervalMs)
     , _cachedStatus({0.0f, 0.0f})
-    , _hasStatus(false) {}
+    , _hasStatus(false)
+    , _pendingCmd({false, 0.0f, false, 0.0f, false}) {}
 
-void RotorService::gotoAzimuth(float degrees) {
-    // NOTE: do NOT log before write — ASCII on the G5500 serial bus corrupts LLP framing.
-    // clear() before addData is explicit defensive init; write() also calls clear() internally.
-    _txPack.clear();
-    _txPack.addData(0xDA, (int16_t)(degrees * 10));
-    _txPack.write(*_serial);
-    ROTOR_LOG_F("CMD goto_az deg=", degrees);
-}
-
-void RotorService::gotoElevation(float degrees) {
-    _txPack.clear();
-    _txPack.addData(0xDB, (int16_t)(degrees * 10));
-    _txPack.write(*_serial);
-    ROTOR_LOG_F("CMD goto_el deg=", degrees);
+void RotorService::enqueuePosition(bool hasAz, float az, bool hasEl, float el) {
+    _pendingCmd = { hasAz, az, hasEl, el, true };
 }
 
 void RotorService::stopAzimuth() {
     _txPack.clear();
     _txPack.addData(0xAA, (int16_t)0xA0);
     _txPack.write(*_serial);
-    ROTOR_LOG("CMD stop_az");
+    LOG("G5500", "CMD stop_az");
 }
 
 void RotorService::stopElevation() {
     _txPack.clear();
     _txPack.addData(0xBB, (int16_t)0xB0);
     _txPack.write(*_serial);
-    ROTOR_LOG("CMD stop_el");
+    LOG("G5500", "CMD stop_el");
 }
 
 void RotorService::update() {
     unsigned long now = millis();
 
     if (_pollState == POLL_IDLE) {
-        if (now - _lastPollMs >= POLL_INTERVAL_MS) {
+        if (_pendingCmd.pending) {
+            // Do NOT log before write — ASCII on the G5500 serial bus corrupts LLP framing.
+            _txPack.clear();
+            if (_pendingCmd.hasAz) _txPack.addData(0xDA, (int16_t)(_pendingCmd.az * 10));
+            if (_pendingCmd.hasEl) _txPack.addData(0xDB, (int16_t)(_pendingCmd.el * 10));
+            _txPack.write(*_serial);
+            // Log after write — gate passes because _pollState is still POLL_IDLE here.
+            LOG_F("G5500", "CMD goto_az deg=", _pendingCmd.az);
+            LOG_F("G5500", "CMD goto_el deg=", _pendingCmd.el);
+            _pendingCmd.pending = false;
+        }
+
+        if (now - _lastPollMs >= _pollIntervalMs) {
             while (_serial->available()) _serial->read();  // flush stale bytes
             _txPack.clear();
             _txPack.addData(0xCC, (int16_t)0xC2);
             _txPack.write(*_serial);
-            ROTOR_LOG("CMD poll_status");  // log AFTER write — never before binary frames
+            LOG("G5500", "CMD poll_status");  // log AFTER write, state still POLL_IDLE — gate passes
             _lastPollMs = now;
             _pollState  = POLL_SENT;
         }
@@ -67,6 +58,8 @@ void RotorService::update() {
 
     // POLL_SENT: check if response has arrived (non-blocking).
     // Set a short timeout so readBytes() inside available() doesn't hold up loop().
+    // NOTE: no logging here — _pollState == POLL_SENT means Serial TX is unsafe
+    //       (ASCII bytes would reach the G5500 while it is sending its response).
     if (_serial->available()) {
         _serial->setTimeout(50);
         if (_rxPack.available(*_serial)) {
@@ -75,25 +68,14 @@ void RotorService::update() {
                 _cachedStatus.azimuthAngle   = _rxPack.getData(0xAB) / 10.0f;
                 _cachedStatus.elevationAngle = _rxPack.getData(0xBC) / 10.0f;
                 _hasStatus = true;
-#if ROTOR_DEBUG
-                Serial.print(F("[G5500] STATUS az="));
-                Serial.print(_cachedStatus.azimuthAngle);
-                Serial.print(F(" el="));
-                Serial.println(_cachedStatus.elevationAngle);
-#endif
-            } else {
-                ROTOR_LOG("STATUS missing keys");
             }
-        } else {
-            ROTOR_LOG("STATUS parse error");
         }
         _pollState = POLL_IDLE;
         return;
     }
 
     // No bytes yet — check for timeout
-    if (now - _lastPollMs > POLL_TIMEOUT_MS) {
-        ROTOR_LOG("STATUS timeout (no response)");
+    if (now - _lastPollMs >= POLL_TIMEOUT_MS) {
         _pollState = POLL_IDLE;
     }
 }
@@ -104,4 +86,8 @@ bool RotorService::hasStatus() const {
 
 const RotorStatus& RotorService::getStatus() const {
     return _cachedStatus;
+}
+
+bool RotorService::isSerialFree() const {
+    return _pollState == POLL_IDLE;
 }
