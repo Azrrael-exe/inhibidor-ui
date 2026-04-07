@@ -54,6 +54,7 @@ void deactivateRFPower(void* context) {
 
 void setup() {
     Serial.begin(115200);
+    Serial2.begin(115200);
     gpsModule.begin(Serial1, 38400);
 
     if (Ethernet.begin(mac) == 0) {
