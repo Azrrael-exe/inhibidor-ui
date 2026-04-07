@@ -3,28 +3,23 @@
 
 // ─── Global serial logger ──────────────────────────────────────────────────
 //
-// Serial is shared between G5500 LLP binary frames (via RotorService) and
-// debug ASCII output. Sending ASCII while the G5500 is in POLL_SENT state
-// places bytes on its RX line that it may interpret as a new LLP command,
-// corrupting the protocol.
-//
-// Logger::canLog() gates every LOG() call: it returns false whenever
-// RotorService reports the serial is busy (POLL_SENT), silently dropping
-// the message instead of corrupting the bus.
+// Serial is used exclusively for debug output.
+// G5500 communication uses Serial2 (separate bus), so no conflict.
 //
 // Set LOG_ENABLED to 0 for production builds.
 // ──────────────────────────────────────────────────────────────────────────
 
-#define LOG_ENABLED 0
+#define LOG_ENABLED 1
 
 class RotorService;  // forward declaration — avoids circular include with services/RotorService.h
 
 namespace Logger {
     // Call once in setup(), after constructing RotorService.
     // Passing nullptr disables the gate (all logs go through unconditionally).
+    // NOTE: Gate is no longer necessary for Serial (G5500 uses Serial2), but kept for consistency.
     void init(const RotorService* rs);
 
-    // Returns true if Serial is currently free for ASCII output.
+    // Returns true (Serial is always free now since G5500 uses Serial2).
     bool canLog();
 }
 

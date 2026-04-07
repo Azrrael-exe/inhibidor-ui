@@ -33,12 +33,10 @@ void RotorService::update() {
 
     if (_pollState == POLL_IDLE) {
         if (_pendingCmd.pending) {
-            // Do NOT log before write — ASCII on the G5500 serial bus corrupts LLP framing.
             _txPack.clear();
             if (_pendingCmd.hasAz) _txPack.addData(0xDA, (int16_t)(_pendingCmd.az * 10));
             if (_pendingCmd.hasEl) _txPack.addData(0xDB, (int16_t)(_pendingCmd.el * 10));
             _txPack.write(*_serial);
-            // Log after write — gate passes because _pollState is still POLL_IDLE here.
             LOG_F("G5500", "CMD goto_az deg=", _pendingCmd.az);
             LOG_F("G5500", "CMD goto_el deg=", _pendingCmd.el);
             _pendingCmd.pending = false;

@@ -23,7 +23,7 @@ WebServer webServer(80);
 
 GpsModule     gpsModule;
 CompassModule compassModule;
-RotorService  rotorService(&Serial);  // _txPack + _rxPack = 364 bytes in .bss
+RotorService  rotorService(&Serial2);  // _txPack + _rxPack = 364 bytes in .bss
 
 SetNavigationAndPowerUseCase setNavAndPowerUseCase(&rotorService);
 
@@ -33,12 +33,12 @@ DigitalSwitch elevationForwardSwitch(ELEVATION_FORWARD_PIN);
 DigitalSwitch elevationBackwardSwitch(ELEVATION_BACKWARD_PIN);
 DigitalSwitch rfPowerSwitch(RF_POWER_PIN);
 
-G5500CommandContext azimuthForwardContext   = { &Serial, AZIMUTH_HEADER,   AZIMUTH_FORWARD,   &rotorService };
-G5500CommandContext azimuthBackwardContext  = { &Serial, AZIMUTH_HEADER,   AZIMUTH_BACKWARD,  &rotorService };
-G5500CommandContext azimuthStopContext      = { &Serial, AZIMUTH_HEADER,   AZIMUTH_STOP,      &rotorService };
-G5500CommandContext elevationForwardContext  = { &Serial, ELEVATION_HEADER, ELEVATION_FORWARD,  &rotorService };
-G5500CommandContext elevationBackwardContext = { &Serial, ELEVATION_HEADER, ELEVATION_BACKWARD, &rotorService };
-G5500CommandContext elevationStopContext     = { &Serial, ELEVATION_HEADER, ELEVATION_STOP,     &rotorService };
+G5500CommandContext azimuthForwardContext   = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_FORWARD,   &rotorService };
+G5500CommandContext azimuthBackwardContext  = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_BACKWARD,  &rotorService };
+G5500CommandContext azimuthStopContext      = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_STOP,      &rotorService };
+G5500CommandContext elevationForwardContext  = { &Serial2, ELEVATION_HEADER, ELEVATION_FORWARD,  &rotorService };
+G5500CommandContext elevationBackwardContext = { &Serial2, ELEVATION_HEADER, ELEVATION_BACKWARD, &rotorService };
+G5500CommandContext elevationStopContext     = { &Serial2, ELEVATION_HEADER, ELEVATION_STOP,     &rotorService };
 
 void activateRFPower(void* context) {
     int8_t bands[7] = { 1, 1, 1, 1, 1, 1, 1 };
