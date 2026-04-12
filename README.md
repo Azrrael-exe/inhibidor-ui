@@ -136,6 +136,44 @@ curl -X POST http://<ip>/set-navigation-and-power \
 
 ---
 
+## UI de control (Streamlit)
+
+El archivo `ui.py` es una interfaz web de página única para operar el sistema sin necesidad de usar `curl` manualmente.
+
+### Requisitos
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) instalado en el sistema.
+
+Las dependencias Python (`streamlit`, `requests`) se resuelven automáticamente al ejecutar el script — no se requiere crear un entorno virtual ni un `requirements.txt`.
+
+### Ejecución
+
+```bash
+uv run ui.py
+```
+
+La interfaz queda disponible en `http://localhost:8501` y se abre automáticamente en el navegador.
+
+### Funcionalidades
+
+- **Monitoreo en tiempo real** — refresco automático configurable (1–60 s) del estado completo: GPS, heading, posición del rotor y estado de las 7 bandas RF.
+- **Control de navegación** — sliders para enviar ángulos de destino al rotor (azimuth 0–450°, elevación 0–180°).
+- **Control de bandas RF** — checkboxes individuales pre-rellenados con el estado actual del dispositivo, más botones de acceso rápido "All ON" / "All OFF".
+- **Semántica patch** — solo se envían los campos seleccionados; los campos omitidos no modifican el estado del dispositivo.
+- **Resiliencia** — si el dispositivo no responde, la UI muestra el último estado conocido con un aviso de error sin interrumpir la operación.
+
+### Configuración desde la UI
+
+En el panel lateral (sidebar) se puede ajustar:
+
+| Campo | Descripción | Default |
+|-------|-------------|---------|
+| Device IP | Dirección IP del CONTROLLINO | `192.168.1.100` |
+| Refresh interval | Segundos entre cada consulta de estado | `3` |
+| Auto-refresh | Activar/desactivar refresco automático | Activado |
+
+---
+
 ## Hardware
 
 | Componente | Interfaz | Descripción |

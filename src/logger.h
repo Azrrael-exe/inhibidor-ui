@@ -19,7 +19,7 @@ namespace Logger {
     // NOTE: Gate is no longer necessary for Serial (G5500 uses Serial2), but kept for consistency.
     void init(const RotorService* rs);
 
-    // Returns true (Serial is always free now since G5500 uses Serial2).
+    // Always returns true — Serial (debug) and Serial2 (G5500) are separate buses.
     bool canLog();
 }
 

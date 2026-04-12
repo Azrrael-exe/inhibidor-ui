@@ -29,6 +29,13 @@ public:
   void begin(uint8_t mode = INPUT_PULLUP);
 
   /**
+   * @brief Re-synchronize internal state to current pin reading without firing callbacks
+   * @note Call at the end of setup() to prevent false transitions caused by
+   *       hardware stabilization delays between begin() and the first loop() iteration.
+   */
+  void sync();
+
+  /**
    * @brief Update switch state and trigger callbacks
    * @note Call this repeatedly in loop()
    * @note Non-blocking, safe to call frequently

@@ -66,6 +66,14 @@ void DigitalSwitch::setOnTurnOff(void (*callback)(void*), void* context) {
   _onTurnOffContext = context;
 }
 
+void DigitalSwitch::sync() {
+  uint8_t reading = digitalRead(_pin);
+  _currentReading = reading;
+  _lastReading = reading;
+  _lastStableState = reading;
+  _lastDebounceTime = millis();
+}
+
 bool DigitalSwitch::getState() const {
   return _lastStableState == HIGH;
 }

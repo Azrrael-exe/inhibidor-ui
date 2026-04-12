@@ -25,6 +25,9 @@ public:
     // Encoded as int16_t * 10 in a single LLP frame (keys 0xDA and/or 0xDB).
     void enqueuePosition(bool hasAz, float az, bool hasEl, float el);
 
+    // key 0xFF, value 0x01 — Highest priority stop sequence
+    void emergencyKill(); 
+    
     void stopAzimuth();   // key 0xAA, value 0xA0 — fire-and-forget, sent immediately
     void stopElevation(); // key 0xBB, value 0xB0 — fire-and-forget, sent immediately
 

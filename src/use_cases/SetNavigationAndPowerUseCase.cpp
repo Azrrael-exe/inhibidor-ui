@@ -17,13 +17,13 @@ bool SetNavigationAndPowerUseCase::execute(
     char*    errorMsg, uint8_t errorMsgLen
 ) {
     if (errorMsgLen == 0) return false;
-    if (hasAz && (az < 0.0f || az > 360.0f)) {
-        strncpy(errorMsg, "azimuth out of range [0,360]", errorMsgLen - 1);
+    if (hasAz && (az < 0.0f || az > 450.0f)) {
+        strncpy(errorMsg, "azimuth out of range [0,450]", errorMsgLen - 1);
         errorMsg[errorMsgLen - 1] = '\0';
         return false;
     }
-    if (hasEl && (el < 0.0f || el > 90.0f)) {
-        strncpy(errorMsg, "elevation out of range [0,90]", errorMsgLen - 1);
+    if (hasEl && (el < 0.0f || el > 180.0f)) {
+        strncpy(errorMsg, "elevation out of range [0,180]", errorMsgLen - 1);
         errorMsg[errorMsgLen - 1] = '\0';
         return false;
     }

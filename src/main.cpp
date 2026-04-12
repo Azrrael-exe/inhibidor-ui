@@ -10,10 +10,12 @@
 #include <WebServer.h>
 #include "handlers/GpsCompassHandler.h"
 #include "handlers/NavigationHandler.h"
+#include "handlers/HardStopHandler.h"
 #include "modules/GpsModule.h"
 #include "modules/CompassModule.h"
 #include "services/RotorService.h"
 #include "use_cases/SetNavigationAndPowerUseCase.h"
+#include "use_cases/HardStopUseCase.h"
 
 // ─── Network configuration ────────────────────────────────────────────────────
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -26,6 +28,7 @@ CompassModule compassModule;
 RotorService  rotorService(&Serial2);  // _txPack + _rxPack = 364 bytes in .bss
 
 SetNavigationAndPowerUseCase setNavAndPowerUseCase(&rotorService);
+HardStopUseCase hardStopUseCase(&rotorService);
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
@@ -70,10 +73,12 @@ void setup() {
     compassModule.begin();
     initStatusHandler(&gpsModule, &compassModule, &rotorService);
     initNavigationHandler(&setNavAndPowerUseCase);
+    initHardStopHandler(&hardStopUseCase);
 
     webServer.begin();
     webServer.on("/status",                   HTTP_GET,  handleGetStatus);
     webServer.on("/set-navigation-and-power", HTTP_POST, handleSetNavigationAndPower);
+    webServer.on("/hard-stop",                HTTP_POST, handleHardStop);
 
     pinMode(RF_BAND_0, OUTPUT);
     pinMode(RF_BAND_1, OUTPUT);
@@ -83,13 +88,16 @@ void setup() {
     pinMode(RF_BAND_5, OUTPUT);
     pinMode(RF_BAND_6, OUTPUT);
 
+    // ─── Railguard: Ensure all RF bands are OFF at startup ─────────────────────
+    deactivateRFPower(nullptr);
+
     // CONTROLLINO MAXI industrial inputs are active-HIGH (0–24V).
-    // INPUT_PULLUP inverts the logic (press=LOW=onTurnOff). Use INPUT instead.
+    // RF switch is connected to GND (active-LOW): INPUT_PULLUP keeps it HIGH when unpressed.
     azimuthForwardSwitch.begin(INPUT);
     azimuthBackwardSwitch.begin(INPUT);
     elevationForwardSwitch.begin(INPUT);
     elevationBackwardSwitch.begin(INPUT);
-    rfPowerSwitch.begin(INPUT);
+    rfPowerSwitch.begin(INPUT_PULLUP);
 
     azimuthForwardSwitch.setOnTurnOn(sendG5500Command, &azimuthForwardContext);
     azimuthBackwardSwitch.setOnTurnOn(sendG5500Command, &azimuthBackwardContext);
@@ -101,8 +109,13 @@ void setup() {
     elevationForwardSwitch.setOnTurnOff(sendG5500Command, &elevationStopContext);
     elevationBackwardSwitch.setOnTurnOff(sendG5500Command, &elevationStopContext);
 
-    rfPowerSwitch.setOnTurnOn(activateRFPower);
-    rfPowerSwitch.setOnTurnOff(deactivateRFPower);
+    // RF switch logic is inverted (connected to GND): LOW=pressed=activate, HIGH=released=deactivate
+    rfPowerSwitch.setOnTurnOn(deactivateRFPower);   // HIGH (released)
+    rfPowerSwitch.setOnTurnOff(activateRFPower);    // LOW (pressed)
+
+    // Re-sync switch state AFTER all initialization delays
+    // to prevent false edge detection on first loop() iteration
+    rfPowerSwitch.sync();
 }
 
 void loop() {

@@ -8,6 +8,5 @@ void Logger::init(const RotorService* rs) {
 }
 
 bool Logger::canLog() {
-    if (!s_rs) return true;
-    return s_rs->isSerialFree();
+    return true;  // Serial (debug) and Serial2 (G5500) are independent buses — no gate needed
 }
