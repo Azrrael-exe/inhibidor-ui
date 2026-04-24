@@ -106,6 +106,15 @@ void WebServer::update() {
         if (_client) {
             _resetParser();
             _parseState = PS_REQUEST_LINE;
+            _lastActivityMs = millis();
+        }
+    }
+
+    // Check for inactive client timeout
+    if (_parseState != PS_IDLE) {
+        if (millis() - _lastActivityMs > WS_CLIENT_TIMEOUT_MS) {
+            _client.stop();
+            _resetParser();
         }
     }
 
@@ -148,6 +157,7 @@ void WebServer::_resetParser() {
     _bodyReceived  = 0;
     _lineLen       = 0;
     _lineOverflow  = false;
+    _lastActivityMs = 0;
 }
 
 // ─── _readClient() ───────────────────────────────────────────────────────────
@@ -164,6 +174,7 @@ void WebServer::_resetParser() {
 void WebServer::_readClient() {
     while (_client.available()) {
         char c = (char)_client.read();
+        _lastActivityMs = millis();
 
         // ── Body phase: read raw bytes ────────────────────────────────────────
         if (_parseState == PS_BODY) {

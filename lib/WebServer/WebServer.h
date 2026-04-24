@@ -25,6 +25,12 @@
  */
 #define WS_LINE_BUF_LEN     256
 
+/**
+ * Maximum time (in milliseconds) to wait for an inactive client
+ * before forcibly closing the connection to prevent blocking.
+ */
+#define WS_CLIENT_TIMEOUT_MS 3000
+
 // ─── HttpMethod ───────────────────────────────────────────────────────────────
 
 enum HttpMethod : uint8_t {
@@ -214,6 +220,8 @@ private:
     char     _lineBuf[WS_LINE_BUF_LEN];
     uint16_t _lineLen;
     bool     _lineOverflow; ///< true when current line exceeded WS_LINE_BUF_LEN
+
+    unsigned long _lastActivityMs; ///< Timestamp of last byte received
 
     // ── Internal helpers ──────────────────────────────────────────────────────
     void _resetParser();

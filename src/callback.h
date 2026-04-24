@@ -1,7 +1,6 @@
 #ifndef CALLBACK_H
 #define CALLBACK_H
 
-#include "llp.h"
 #include "services/RotorService.h"
 
 #define AZIMUTH_HEADER 0xAA
