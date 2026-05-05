@@ -6,6 +6,7 @@
 # ]
 # ///
 
+import json
 import time
 from datetime import datetime
 
@@ -104,6 +105,11 @@ def init_session_state():
         "ctrl_bands": {f"band_{i}": False for i in range(NUM_BANDS)},
         "send_nav": True,
         "send_bands": True,
+        # Network config command builder
+        "netcfg_mode": "dhcp",
+        "netcfg_ip": "192.168.1.100",
+        "netcfg_subnet": "255.255.255.0",
+        "netcfg_gateway": "192.168.1.1",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -174,6 +180,67 @@ def render_sidebar():
 
         if st.button("Refresh now", use_container_width=True):
             st.rerun()
+
+        st.divider()
+        render_network_config()
+
+# ---------------------------------------------------------------------------
+# Network config — JSON command builder
+# ---------------------------------------------------------------------------
+
+def render_network_config():
+    with st.expander("Network Config (Command Builder)", expanded=False):
+        st.caption(
+            "Construye los comandos JSON para configurar la IP del dispositivo. "
+            "Copialos y enviálos por Serial USB con `pio device monitor -b 115200` "
+            "(recordá presionar Enter después de pegar)."
+        )
+
+        # ── Read current config ─────────────────────────────────────────────
+        st.markdown("**1. Consultar configuración actual**")
+        st.code('{"cmd":"get-config"}', language="json")
+
+        st.divider()
+
+        # ── Build a set-config command ──────────────────────────────────────
+        st.markdown("**2. Configurar nueva IP**")
+        mode = st.radio(
+            "Mode", ["dhcp", "static"],
+            index=0 if st.session_state.netcfg_mode == "dhcp" else 1,
+            horizontal=True,
+            key="netcfg_mode_radio",
+        )
+        st.session_state.netcfg_mode = mode
+
+        if mode == "static":
+            st.session_state.netcfg_ip = st.text_input(
+                "IP", value=st.session_state.netcfg_ip, key="netcfg_ip_input",
+            )
+            st.session_state.netcfg_subnet = st.text_input(
+                "Subnet mask", value=st.session_state.netcfg_subnet,
+                key="netcfg_subnet_input",
+            )
+            st.session_state.netcfg_gateway = st.text_input(
+                "Gateway", value=st.session_state.netcfg_gateway,
+                key="netcfg_gateway_input",
+            )
+            payload = {
+                "cmd": "set-config",
+                "mode": "static",
+                "ip": st.session_state.netcfg_ip.strip(),
+                "subnet": st.session_state.netcfg_subnet.strip(),
+                "gateway": st.session_state.netcfg_gateway.strip(),
+            }
+        else:
+            payload = {"cmd": "set-config", "mode": "dhcp"}
+
+        st.code(json.dumps(payload), language="json")
+
+        st.divider()
+
+        # ── Factory reset ───────────────────────────────────────────────────
+        st.markdown("**3. Reset de fábrica (vuelve a DHCP)**")
+        st.code('{"cmd":"reset-config"}', language="json")
 
 # ---------------------------------------------------------------------------
 # Status section

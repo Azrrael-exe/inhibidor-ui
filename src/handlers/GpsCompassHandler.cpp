@@ -1,21 +1,27 @@
 #include "GpsCompassHandler.h"
 #include "../use_cases/GetRotorStatusUseCase.h"
+#include "../services/NetworkWatchdog.h"
 #include "../pinout.h"
 #include <Arduino.h>
 #include <stdio.h>
 
-static GpsModule*     s_gps     = nullptr;
-static CompassModule* s_compass = nullptr;
-static RotorService*  s_rotor   = nullptr;
+static GpsModule*       s_gps      = nullptr;
+static CompassModule*   s_compass  = nullptr;
+static RotorService*    s_rotor    = nullptr;
+static NetworkWatchdog* s_watchdog = nullptr;
 
-void initStatusHandler(GpsModule* gps, CompassModule* compass, RotorService* rotor) {
-    s_gps     = gps;
-    s_compass = compass;
-    s_rotor   = rotor;
+void initStatusHandler(GpsModule* gps, CompassModule* compass, RotorService* rotor,
+                       NetworkWatchdog* watchdog) {
+    s_gps      = gps;
+    s_compass  = compass;
+    s_rotor    = rotor;
+    s_watchdog = watchdog;
 }
 
 // GET /status
 void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
+    if (s_watchdog) s_watchdog->notifyActivity();
+
     if (!s_gps || !s_compass) {
         res.json(503, "{\"error\":\"module not initialized\"}");
         return;

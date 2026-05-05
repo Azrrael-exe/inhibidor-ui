@@ -1,11 +1,14 @@
 #include "NavigationHandler.h"
 #include "json_helpers.h"
+#include "../services/NetworkWatchdog.h"
 #include <Arduino.h>
 
-static SetNavigationAndPowerUseCase* s_useCase = nullptr;
+static SetNavigationAndPowerUseCase* s_useCase  = nullptr;
+static NetworkWatchdog*               s_watchdog = nullptr;
 
-void initNavigationHandler(SetNavigationAndPowerUseCase* useCase) {
-    s_useCase = useCase;
+void initNavigationHandler(SetNavigationAndPowerUseCase* useCase, NetworkWatchdog* watchdog) {
+    s_useCase  = useCase;
+    s_watchdog = watchdog;
 }
 
 // POST /set-navigation-and-power
@@ -13,6 +16,8 @@ void initNavigationHandler(SetNavigationAndPowerUseCase* useCase) {
 //   { "azimuth": 180.0, "elevation": 45.0, "band_0": true, ..., "band_6": false }
 // Omitted fields leave current state unchanged.
 void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
+    if (s_watchdog) s_watchdog->notifyActivity();
+
     if (!s_useCase) {
         res.json(503, "{\"error\":\"rotor not available\"}");
         return;

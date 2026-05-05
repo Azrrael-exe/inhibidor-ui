@@ -1,5 +1,4 @@
 #include "CompassModule.h"
-#include "../logger.h"
 #include <Wire.h>
 #include <math.h>
 
@@ -25,7 +24,6 @@ bool CompassModule::begin(uint8_t address) {
     Wire.begin();
 
     if (readReg(QMC5883L_REG_CHIP_ID) != 0xFF) {
-        LOG("Compass", "QMC5883L no encontrado");
         return false;
     }
 
@@ -33,7 +31,6 @@ bool CompassModule::begin(uint8_t address) {
     writeReg(QMC5883L_REG_CTRL2,     0x00);
     writeReg(QMC5883L_REG_CTRL1,     QMC5883L_CTRL1_CONTINUOUS);
 
-    LOG("Compass", "QMC5883L OK");
     return true;
 }
 

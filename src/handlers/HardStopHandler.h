@@ -2,5 +2,7 @@
 #include <WebServer.h>
 #include "../use_cases/HardStopUseCase.h"
 
-void initHardStopHandler(HardStopUseCase* useCase);
+class NetworkWatchdog;
+
+void initHardStopHandler(HardStopUseCase* useCase, NetworkWatchdog* watchdog = nullptr);
 void handleHardStop(const HttpRequest& req, HttpResponse& res);

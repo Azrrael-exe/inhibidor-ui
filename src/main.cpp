@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <avr/wdt.h>
 
 #include "logger.h"
 #include "pinout.h"
@@ -14,6 +15,9 @@
 #include "modules/GpsModule.h"
 #include "modules/CompassModule.h"
 #include "services/RotorService.h"
+#include "services/NetworkConfig.h"
+#include "services/NetworkWatchdog.h"
+#include "services/SerialConfigService.h"
 #include "use_cases/SetNavigationAndPowerUseCase.h"
 #include "use_cases/HardStopUseCase.h"
 
@@ -22,6 +26,7 @@ byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 IPAddress fallbackIp(192, 168, 1, 100);
 
 WebServer webServer(80);
+SerialConfigService serialConfig;
 
 GpsModule     gpsModule;
 CompassModule compassModule;
@@ -29,6 +34,7 @@ RotorService  rotorService(&Serial2);  // _txPack + _rxPack = 364 bytes in .bss
 
 SetNavigationAndPowerUseCase setNavAndPowerUseCase(&rotorService);
 HardStopUseCase hardStopUseCase(&rotorService);
+NetworkWatchdog networkWatchdog(&hardStopUseCase, 10000UL);
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
@@ -56,24 +62,43 @@ void deactivateRFPower(void* context) {
 }
 
 void setup() {
+    // Disable watchdog promptly after a WDT-induced reset (used by NetworkConfig::reboot).
+    wdt_disable();
+
     Serial.begin(115200);
     Serial2.begin(115200);
     gpsModule.begin(Serial1, 38400);
 
-    if (Ethernet.begin(mac) == 0) {
-        Ethernet.begin(mac, fallbackIp);
-        LOG_F("WebServer", "DHCP failed, using static IP: ", Ethernet.localIP());
+    NetConfig netCfg;
+    bool useStatic = NetworkConfig::load(netCfg) && netCfg.useEepromConfig;
+
+    if (useStatic) {
+        Ethernet.begin(mac,
+                       IPAddress((netCfg.ip      >> 24) & 0xFF, (netCfg.ip      >> 16) & 0xFF,
+                                 (netCfg.ip      >>  8) & 0xFF,  netCfg.ip      & 0xFF),
+                       IPAddress(0, 0, 0, 0),
+                       IPAddress((netCfg.gateway >> 24) & 0xFF, (netCfg.gateway >> 16) & 0xFF,
+                                 (netCfg.gateway >>  8) & 0xFF,  netCfg.gateway & 0xFF),
+                       IPAddress((netCfg.subnet  >> 24) & 0xFF, (netCfg.subnet  >> 16) & 0xFF,
+                                 (netCfg.subnet  >>  8) & 0xFF,  netCfg.subnet  & 0xFF));
+        LOG_F("WebServer", "Static IP from EEPROM: ", Ethernet.localIP());
     } else {
-        LOG_F("WebServer", "DHCP OK, IP: ", Ethernet.localIP());
+        if (Ethernet.begin(mac) == 0) {
+            Ethernet.begin(mac, fallbackIp);
+            LOG_F("WebServer", "DHCP failed, using static fallback: ", Ethernet.localIP());
+        } else {
+            LOG_F("WebServer", "DHCP OK, IP: ", Ethernet.localIP());
+        }
     }
     delay(1000);
 
     Logger::init(&rotorService);
+    serialConfig.begin(&Serial, mac);
 
     compassModule.begin();
-    initStatusHandler(&gpsModule, &compassModule, &rotorService);
-    initNavigationHandler(&setNavAndPowerUseCase);
-    initHardStopHandler(&hardStopUseCase);
+    initStatusHandler(&gpsModule, &compassModule, &rotorService, &networkWatchdog);
+    initNavigationHandler(&setNavAndPowerUseCase, &networkWatchdog);
+    initHardStopHandler(&hardStopUseCase, &networkWatchdog);
 
     webServer.begin();
     webServer.on("/status",                   HTTP_GET,  handleGetStatus);
@@ -116,10 +141,18 @@ void setup() {
     // Re-sync switch state AFTER all initialization delays
     // to prevent false edge detection on first loop() iteration
     rfPowerSwitch.sync();
+
+    networkWatchdog.setManualOverrideSources(&azimuthForwardSwitch, &azimuthBackwardSwitch,
+                                             &elevationForwardSwitch, &elevationBackwardSwitch,
+                                             &rfPowerSwitch);
+    // Grace period: avoid a spurious trip before the UI's first poll arrives.
+    networkWatchdog.notifyActivity();
 }
 
 void loop() {
     webServer.update();
+    networkWatchdog.update();
+    serialConfig.update();
 
     gpsModule.update();
     compassModule.update();

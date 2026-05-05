@@ -1,4 +1,5 @@
 #include "GpsModule.h"
+#include "../logger.h"
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -74,7 +75,9 @@ float GpsModule::nmeaToDecimal(const char* nmea, char dir) {
 void GpsModule::parseSentence() {
     if (!verifyChecksum(_buf)) return;
 
-    // Marcar que llegó al menos una trama válida
+    if (!_data.nmea_ok) {
+        LOG("GPS", "Connected (NMEA OK)");
+    }
     _data.nmea_ok = true;
 
     // Comparar los primeros 5 chars del tipo de sentencia (sin el $)

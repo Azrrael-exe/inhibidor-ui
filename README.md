@@ -136,6 +136,118 @@ curl -X POST http://<ip>/set-navigation-and-power \
 
 ---
 
+## Configuración de red por Serial (JSON)
+
+La IP, máscara y gateway del dispositivo se configuran enviando comandos JSON por el **puerto Serial USB** (`Serial`, 115200 bps, 8-N-1). La configuración se persiste en la EEPROM interna del ATmega2560 y sobrevive a power-cycles.
+
+**¿Por qué Serial y no HTTP?** Es la única vía de recuperación garantizada cuando una IP estática mal configurada deja al equipo aislado de la red. No hay watchdogs ni rollbacks automáticos: el boot es determinista — el equipo levanta exactamente con lo que dice la EEPROM.
+
+### Conexión
+
+```bash
+pio device monitor -b 115200
+# o cualquier terminal serial: screen, minicom, picocom, putty, etc.
+```
+
+Cada comando es **una línea JSON terminada en `\n`**. El servicio convive con el `Logger` de debug en el mismo Serial: las líneas que no empiezan con `{` se ignoran silenciosamente, así que los logs no interfieren con el parser.
+
+> ⚠️ **Importante**: el firmware solo procesa el comando cuando recibe el terminador de línea (`\n` o `\r`). Si estás escribiendo desde un monitor serial interactivo (PlatformIO, Arduino IDE, screen, minicom), asegurate de **enviar Enter / salto de línea** después del JSON. Sin newline, el comando se queda buffered indefinidamente y no recibirás respuesta.
+>
+> - **PlatformIO Monitor**: Enter manda `\r` por default → funciona.
+> - **Arduino IDE Serial Monitor**: en el dropdown inferior derecho elegí `Newline`, `Carriage return` o `Both NL & CR`. **No** uses `No line ending`.
+> - **screen / minicom**: Enter manda `\r` por default → funciona.
+> - **Desde código (Python `pyserial`, etc.)**: agregá `\n` explícitamente al final del payload.
+
+Al boot el sistema emite un banner:
+
+```json
+{"info":"config-channel","commands":["get-config","set-config","reset-config"]}
+```
+
+### Comandos
+
+#### `get-config` — consultar estado de red
+
+**Request:**
+
+```json
+{"cmd":"get-config"}
+```
+
+**Response:**
+
+```json
+{"mode":"static","ip":"192.168.5.50","subnet":"255.255.255.0","gateway":"192.168.5.1","currentIp":"192.168.5.50","macAddress":"DE:AD:BE:EF:FE:ED"}
+```
+
+| Campo | Descripción |
+|-------|-------------|
+| `mode` | `"static"` si la EEPROM tiene config válida y el flag activo; `"dhcp"` si no |
+| `ip`, `subnet`, `gateway` | Config almacenada en EEPROM (en modo `dhcp` aparecen como `0.0.0.0`) |
+| `currentIp` | IP **realmente asignada** al stack ethernet en este momento (la del DHCP cuando aplica) |
+| `macAddress` | MAC actual del dispositivo |
+
+#### `set-config` — escribir nueva configuración
+
+Escribe la config a EEPROM y **reinicia el dispositivo** automáticamente para que la nueva IP tome efecto.
+
+**Modo estático:**
+
+```json
+{"cmd":"set-config","mode":"static","ip":"192.168.5.50","subnet":"255.255.255.0","gateway":"192.168.5.1"}
+```
+
+**Modo DHCP** (apaga el flag de EEPROM, vuelve a obtención automática):
+
+```json
+{"cmd":"set-config","mode":"dhcp"}
+```
+
+**Response (éxito):**
+
+```json
+{"status":"saved","reboot":true}
+```
+
+**Errores** (no se escribe la EEPROM, no hay reboot):
+
+| Mensaje | Causa |
+|---------|-------|
+| `{"error":"missing cmd"}` | El JSON no contiene la clave `cmd` |
+| `{"error":"missing mode"}` | `set-config` sin clave `mode` |
+| `{"error":"missing ip/subnet/gateway"}` | Modo `static` sin alguno de los 3 campos requeridos |
+| `{"error":"invalid ip"}` | IP con formato inválido o `0.0.0.0` / `255.255.255.255` |
+| `{"error":"invalid subnet"}` / `{"error":"non-contiguous subnet"}` | Máscara inválida o no contigua |
+| `{"error":"invalid gateway"}` / `{"error":"gateway not in subnet"}` | Gateway inválido o fuera de la subred indicada |
+| `{"error":"invalid mode"}` | `mode` no es `"static"` ni `"dhcp"` |
+
+#### `reset-config` — borrar configuración
+
+Restaura el factory default (modo DHCP) y reinicia.
+
+```json
+{"cmd":"reset-config"}
+```
+
+**Response:**
+
+```json
+{"status":"saved","reboot":true}
+```
+
+### Recuperación de una IP que dejó al equipo aislado
+
+Si configuraste una IP estática y el equipo no responde por la red (subred equivocada, IP duplicada, gateway inalcanzable):
+
+1. Conectá el cable USB al CONTROLLINO MAXI.
+2. Abrí el monitor serial (`pio device monitor -b 115200`).
+3. Enviá `{"cmd":"set-config","mode":"dhcp"}` (o reescribí la IP correcta).
+4. El equipo reinicia y vuelve a estar accesible por red.
+
+Si la EEPROM se corrompe (magic byte o CRC inválidos), el firmware trata el contenido como ausente y bootea en DHCP automáticamente — no hay forma de "brickear" el equipo por una EEPROM en mal estado.
+
+---
+
 ## UI de control (Streamlit)
 
 El archivo `ui.py` es una interfaz web de página única para operar el sistema sin necesidad de usar `curl` manualmente.
@@ -161,6 +273,7 @@ La interfaz queda disponible en `http://localhost:8501` y se abre automáticamen
 - **Control de bandas RF** — checkboxes individuales pre-rellenados con el estado actual del dispositivo, más botones de acceso rápido "All ON" / "All OFF".
 - **Semántica patch** — solo se envían los campos seleccionados; los campos omitidos no modifican el estado del dispositivo.
 - **Resiliencia** — si el dispositivo no responde, la UI muestra el último estado conocido con un aviso de error sin interrumpir la operación.
+- **Constructor de comandos de red** — en el sidebar, el panel "Network Config (Command Builder)" arma los JSON (`get-config`, `set-config`, `reset-config`) listos para copiar y pegar en `pio device monitor`. La UI no abre el puerto serial: solo te entrega el comando.
 
 ### Configuración desde la UI
 
