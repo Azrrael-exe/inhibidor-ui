@@ -11,11 +11,25 @@ Base URL: `http://<ip-del-dispositivo>`
 
 Todas las respuestas son JSON. En caso de error, la respuesta incluye un campo `error` con descripción del problema (HTTP 4xx/5xx).
 
+### Correlación request ↔ response (`request_id`)
+
+Los endpoints `GET /status` y `POST /set-navigation-and-power` aceptan un campo opcional **`request_id`** que el servidor echo-devuelve en el cuerpo de la respuesta para que el cliente pueda correlacionar pares request/response (útil con reintentos, latencia variable, o múltiples clientes).
+
+- Formato válido: `[A-Za-z0-9_-]{1,36}`. Si se envía con otro formato → `HTTP 400 {"error":"invalid request_id"}` (en POST, el comando **no** se encola).
+- Si no se envía, la respuesta no incluye `request_id` (backwards-compatible).
+- `POST /hard-stop` **no** acepta `request_id`.
+
 ---
 
 ### GET /status
 
-Retorna el estado completo del sistema.
+Retorna el estado completo del sistema. Acepta `request_id` como query param opcional.
+
+**Query params:**
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `request_id` | string (opcional) | Identificador `[A-Za-z0-9_-]{1,36}`. Si se envía, se echo-devuelve en la respuesta. |
 
 **Response:**
 
@@ -40,7 +54,8 @@ Retorna el estado completo del sistema.
     "band_4": true,
     "band_5": false,
     "band_6": true
-  }
+  },
+  "request_id": "abc123"
 }
 ```
 
@@ -54,11 +69,23 @@ Retorna el estado completo del sistema.
 | `navigation.azimuth` | string | Ángulo actual del rotor en azimuth (0–360°). `"0.0"` si el G5500 no responde. |
 | `navigation.elevation` | string | Ángulo actual del rotor en elevación (0–90°). `"0.0"` si el G5500 no responde. |
 | `power.band_0` … `power.band_6` | boolean | Estado actual de cada banda de RF |
+| `request_id` | string | Solo presente si fue enviado en el request, idéntico al valor recibido. |
 
-**Ejemplo:**
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 400 | `request_id` con formato inválido (no matchea `[A-Za-z0-9_-]{1,36}`) |
+| 503 | Módulos GPS/Compass no inicializados |
+
+**Ejemplos:**
 
 ```bash
+# Sin tracking
 curl http://<ip>/status
+
+# Con request_id para correlacionar (UUID hex de 32 chars)
+curl "http://<ip>/status?request_id=$(uuidgen | tr -d '-' | tr 'A-Z' 'a-z')"
 ```
 
 ---
@@ -80,7 +107,8 @@ Todos los campos son opcionales — los campos omitidos no modifican el estado a
   "band_3": false,
   "band_4": true,
   "band_5": false,
-  "band_6": true
+  "band_6": true,
+  "request_id": "abc123"
 }
 ```
 
@@ -89,11 +117,37 @@ Todos los campos son opcionales — los campos omitidos no modifican el estado a
 | `azimuth` | float | 0.0 – 360.0 | Ángulo de destino en azimuth (opcional) |
 | `elevation` | float | 0.0 – 90.0 | Ángulo de destino en elevación (opcional) |
 | `band_0` … `band_6` | boolean | — | `true` activa la banda, `false` la desactiva (opcionales) |
+| `request_id` | string | `[A-Za-z0-9_-]{1,36}` | Identificador opcional. Si se envía con formato inválido, el comando **no** se encola y se retorna 400. |
 
 **Response:**
 
+Devuelve el mismo payload que `GET /status`, prefijado con `"status":"queued"` para indicar que el comando fue aceptado. Los campos `navigation.azimuth` / `navigation.elevation` reflejan la posición **actual** del rotor (no el target recién encolado, que tarda en alcanzarse). Si el request incluyó `request_id`, se echo-devuelve como último campo.
+
 ```json
-{ "status": "ok" }
+{
+  "status": "queued",
+  "gps": {
+    "lat": "19.432608",
+    "lon": "-99.133209",
+    "alt": "2240.0",
+    "datetime": "2026-02-24T15:30:00Z"
+  },
+  "heading": "273.4",
+  "navigation": {
+    "azimuth": "182.3",
+    "elevation": "44.7"
+  },
+  "power": {
+    "band_0": true,
+    "band_1": false,
+    "band_2": true,
+    "band_3": false,
+    "band_4": true,
+    "band_5": false,
+    "band_6": true
+  },
+  "request_id": "abc123"
+}
 ```
 
 **Errores:**
@@ -102,6 +156,7 @@ Todos los campos son opcionales — los campos omitidos no modifican el estado a
 |------|-----------|
 | 400 | `azimuth` fuera de rango `[0, 360]` |
 | 400 | `elevation` fuera de rango `[0, 90]` |
+| 400 | `request_id` con formato inválido (no matchea `[A-Za-z0-9_-]{1,36}`) |
 | 503 | Rotor no disponible (no inicializado) |
 
 **Ejemplos:**
@@ -127,11 +182,52 @@ curl -X POST http://<ip>/set-navigation-and-power \
   -H "Content-Type: application/json" \
   -d '{"azimuth":90.0,"elevation":30.0,"band_0":true,"band_1":true,"band_2":true,"band_3":true,"band_4":true,"band_5":true,"band_6":true}'
 
+# Con request_id para correlacionar
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"azimuth":180.0,"request_id":"job_42"}'
+
 # Error esperado — azimuth fuera de rango
 curl -X POST http://<ip>/set-navigation-and-power \
   -H "Content-Type: application/json" \
   -d '{"azimuth":400.0}'
 # → HTTP 400  {"error":"azimuth out of range [0,360]"}
+
+# Error esperado — request_id inválido (espacios)
+curl -X POST http://<ip>/set-navigation-and-power \
+  -H "Content-Type: application/json" \
+  -d '{"azimuth":90.0,"request_id":"has spaces"}'
+# → HTTP 400  {"error":"invalid request_id"}  (el comando NO se encola)
+```
+
+---
+
+### POST /hard-stop
+
+Parada de emergencia. **Apaga las 7 bandas de RF** y **envía comando de stop al rotor G5500** (azimuth y elevación). No recibe body.
+
+Este mismo flujo lo dispara el `ActivityWatchdog` automáticamente si pierde actividad de control o HTTP — el endpoint es la versión manual del mismo procedimiento.
+
+**Request:**
+
+Sin body. Cualquier contenido enviado se ignora. **No** acepta `request_id` (a diferencia de los otros endpoints).
+
+**Response:**
+
+```json
+{ "status": "hard_stop_executed" }
+```
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 503 | Use case no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl -X POST http://<ip>/hard-stop
 ```
 
 ---

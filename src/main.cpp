@@ -107,7 +107,8 @@ void setup() {
     controlChannelId = activityWatchdog.registerChannel("control", 60000UL);
 
     initStatusHandler(&gpsModule, &compassModule, &rotorService, &activityWatchdog, httpChannelId);
-    initNavigationHandler(&setNavAndPowerUseCase, &activityWatchdog, httpChannelId);
+    initNavigationHandler(&setNavAndPowerUseCase, &gpsModule, &compassModule, &rotorService,
+                          &activityWatchdog, httpChannelId);
     initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
 
     webServer.begin();

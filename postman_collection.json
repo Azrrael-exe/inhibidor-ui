@@ -1,0 +1,345 @@
+{
+	"info": {
+		"_postman_id": "8e2c9e7a-1f3b-4c5d-9e0a-inhibidor0001",
+		"name": "Inhibidor UI",
+		"description": "API HTTP del sistema de control embebido CONTROLLINO MAXI (ATmega2560).\n\nBase URL configurable vía la variable de colección `base_url` (default `http://192.168.1.100`).\n\nTodas las respuestas son JSON. En caso de error, el body incluye un campo `error` con descripción del problema (HTTP 4xx/5xx).\n\n**Correlación request ↔ response (`request_id`):** los endpoints `GET /status` y `POST /set-navigation-and-power` aceptan un campo opcional `request_id` (formato `[A-Za-z0-9_-]{1,36}`) que el servidor echo-devuelve en la respuesta. Si se envía con formato inválido → HTTP 400. `POST /hard-stop` no lo acepta. En esta colección los requests vienen con un `request_id` placeholder (`<uuid>`) deshabilitado por default — habilitalo y reemplazalo con un UUID real para activar el tracking.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "GET /status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/status?request_id=<uuid>",
+					"host": ["{{base_url}}"],
+					"path": ["status"],
+					"query": [
+						{
+							"key": "request_id",
+							"value": "<uuid>",
+							"description": "Opcional. Formato `[A-Za-z0-9_-]{1,36}`. Se echo-devuelve en la respuesta para correlación. Reemplazá `<uuid>` con un valor real (o deshabilitá el param para no enviarlo).",
+							"disabled": true
+						}
+					]
+				},
+				"description": "Retorna el estado completo del sistema: GPS, heading, posición del rotor y estado de las 7 bandas RF.\n\n**Query params:**\n- `request_id` (opcional): identificador `[A-Za-z0-9_-]{1,36}` que se echo-devuelve para correlación.\n\n**Campos de respuesta:**\n- `gps.lat` / `gps.lon` (string): grados decimales\n- `gps.alt` (string): metros\n- `gps.datetime` (string): UTC ISO 8601\n- `heading` (string): rumbo del compás 0–360°\n- `navigation.azimuth` / `navigation.elevation` (string): ángulos del rotor (`\"0.0\"` si el G5500 no responde)\n- `power.band_0` … `power.band_6` (boolean): estado actual de cada banda RF\n- `request_id` (string, opcional): solo presente si fue enviado en el request.\n\n**Errores:**\n- `400` — `request_id` con formato inválido"
+			},
+			"response": [
+				{
+					"name": "200 OK (con request_id)",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/status?request_id=<uuid>",
+							"host": ["{{base_url}}"],
+							"path": ["status"],
+							"query": [
+								{ "key": "request_id", "value": "<uuid>" }
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": false,\n    \"band_2\": true,\n    \"band_3\": false,\n    \"band_4\": true,\n    \"band_5\": false,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\"\n}"
+				},
+				{
+					"name": "400 Bad Request — invalid request_id",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/status?request_id=has spaces",
+							"host": ["{{base_url}}"],
+							"path": ["status"],
+							"query": [
+								{ "key": "request_id", "value": "has spaces" }
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"error\": \"invalid request_id\"\n}"
+				}
+			]
+		},
+		{
+			"name": "POST /set-navigation-and-power",
+			"description": "Envía ángulos de goto al rotor y/o activa/desactiva bandas de RF en un solo request. Todos los campos del body son opcionales — los omitidos no modifican el estado actual.\n\nLa respuesta devuelve el mismo payload que `GET /status`, prefijado con `\"status\":\"queued\"`. Los campos `navigation.*` reflejan la posición **actual** del rotor (no el target recién encolado). Si el body incluyó `request_id`, se echo-devuelve como último campo.\n\n**Campo opcional `request_id`** (string, formato `[A-Za-z0-9_-]{1,36}`): se echo-devuelve para correlación. Si está presente con formato inválido, el comando **no** se encola y se retorna 400.\n\n**Errores:**\n- `400` — `azimuth` fuera de `[0, 360]`\n- `400` — `elevation` fuera de `[0, 90]`\n- `400` — `request_id` con formato inválido\n- `503` — Rotor no disponible (no inicializado)",
+			"item": [
+				{
+					"name": "Solo ángulos (azimuth + elevation)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"azimuth\": 180.0,\n  \"elevation\": 45.0,\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						},
+						"description": "Sólo mueve el rotor. No toca las bandas RF.\n\n`request_id` es opcional — borralo del body si no querés tracking."
+					},
+					"response": []
+				},
+				{
+					"name": "Solo banda RF (band_0 ON)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"band_0\": true,\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						},
+						"description": "Activa `band_0`. Las demás bandas y los ángulos del rotor quedan sin cambio (semántica patch)."
+					},
+					"response": []
+				},
+				{
+					"name": "Apagar todas las bandas",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"band_0\": false,\n  \"band_1\": false,\n  \"band_2\": false,\n  \"band_3\": false,\n  \"band_4\": false,\n  \"band_5\": false,\n  \"band_6\": false,\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Combinado: ángulos + todas las bandas ON",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"azimuth\": 90.0,\n  \"elevation\": 30.0,\n  \"band_0\": true,\n  \"band_1\": true,\n  \"band_2\": true,\n  \"band_3\": true,\n  \"band_4\": true,\n  \"band_5\": true,\n  \"band_6\": true,\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						}
+					},
+					"response": [
+						{
+							"name": "200 OK",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"azimuth\": 90.0,\n  \"elevation\": 30.0,\n  \"band_0\": true,\n  \"band_1\": true,\n  \"band_2\": true,\n  \"band_3\": true,\n  \"band_4\": true,\n  \"band_5\": true,\n  \"band_6\": true,\n  \"request_id\": \"<uuid>\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-navigation-and-power",
+									"host": ["{{base_url}}"],
+									"path": ["set-navigation-and-power"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"queued\",\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": true,\n    \"band_2\": true,\n    \"band_3\": true,\n    \"band_4\": true,\n    \"band_5\": true,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Error 400 — azimuth fuera de rango",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"azimuth\": 400.0\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						},
+						"description": "Caso de error esperado: azimuth debe estar en `[0, 360]`."
+					},
+					"response": [
+						{
+							"name": "400 Bad Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"azimuth\": 400.0\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-navigation-and-power",
+									"host": ["{{base_url}}"],
+									"path": ["set-navigation-and-power"]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"azimuth out of range [0,360]\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Error 400 — request_id inválido",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"azimuth\": 90.0,\n  \"request_id\": \"has spaces\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-navigation-and-power",
+							"host": ["{{base_url}}"],
+							"path": ["set-navigation-and-power"]
+						},
+						"description": "El validador rechaza cualquier `request_id` que no matchee `[A-Za-z0-9_-]{1,36}`. Importante: cuando esto sucede, **el comando no se encola** — el rotor y las bandas no cambian de estado."
+					},
+					"response": [
+						{
+							"name": "400 Bad Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"azimuth\": 90.0,\n  \"request_id\": \"has spaces\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-navigation-and-power",
+									"host": ["{{base_url}}"],
+									"path": ["set-navigation-and-power"]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"invalid request_id\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "POST /hard-stop",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/hard-stop",
+					"host": ["{{base_url}}"],
+					"path": ["hard-stop"]
+				},
+				"description": "Parada de emergencia. Apaga las 7 bandas de RF y envía comando de stop al rotor G5500 (azimuth y elevación). No recibe body.\n\nEste mismo flujo lo dispara el `ActivityWatchdog` automáticamente si pierde actividad de control o HTTP — el endpoint es la versión manual del mismo procedimiento.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
+			},
+			"response": [
+				{
+					"name": "200 OK",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/hard-stop",
+							"host": ["{{base_url}}"],
+							"path": ["hard-stop"]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"status\": \"hard_stop_executed\"\n}"
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://192.168.1.100",
+			"type": "string",
+			"description": "IP del CONTROLLINO MAXI. Cambiar según la red del dispositivo."
+		}
+	]
+}

@@ -8,6 +8,7 @@
 
 import json
 import time
+import uuid
 from datetime import datetime
 
 import requests
@@ -25,49 +26,85 @@ NUM_BANDS = 7
 COMPASS_LABELS = ["N ↑", "NE ↗", "E →", "SE ↘", "S ↓", "SW ↙", "W ←", "NW ↖"]
 
 
+def _make_rid() -> str:
+    """32-char hex UUID, alfanumérico — satisface el regex [A-Za-z0-9_-]{1,36} del firmware."""
+    return uuid.uuid4().hex
+
+
+def _build_cmd_result(
+    ok: str | None,
+    err: str | None,
+    success_msg: str,
+    sent_rid: str,
+    echo_rid: str | None,
+) -> tuple[str, str]:
+    """Build a (level, message) tuple for last_cmd_result, embedding the request_id
+    for visual correlation. Adds an echo-mismatch warning if the server returned
+    a request_id that doesn't match the one we sent."""
+    short = sent_rid[:8]
+    if ok:
+        msg = f"{success_msg} (req: {short})"
+        if echo_rid is not None and echo_rid != sent_rid:
+            msg += " ⚠ echo mismatch"
+        return ("success", msg)
+    return ("error", f"{err} (req: {short})")
+
+
 # ---------------------------------------------------------------------------
 # HTTP client
 # ---------------------------------------------------------------------------
 
-def get_status(ip: str) -> tuple[dict | None, str | None]:
+def get_status(ip: str) -> tuple[dict | None, str | None, str]:
+    """Fetch /status with an auto-generated request_id.
+    Returns (data, error, request_id). The request_id is always returned
+    so callers can correlate against data["request_id"] echo."""
+    rid = _make_rid()
     try:
-        r = requests.get(f"http://{ip}/status", timeout=TIMEOUT)
+        r = requests.get(
+            f"http://{ip}/status",
+            params={"request_id": rid},
+            timeout=TIMEOUT,
+        )
         if r.status_code == 200:
-            return r.json(), None
+            return r.json(), None, rid
         try:
             msg = r.json().get("error", r.text)
         except Exception:
             msg = r.text
-        return None, f"HTTP {r.status_code}: {msg}"
+        return None, f"HTTP {r.status_code}: {msg}", rid
     except requests.exceptions.ConnectionError:
-        return None, "Connection refused — device offline or wrong IP"
+        return None, "Connection refused — device offline or wrong IP", rid
     except requests.exceptions.Timeout:
-        return None, f"Timeout after {TIMEOUT}s"
+        return None, f"Timeout after {TIMEOUT}s", rid
     except Exception as e:
-        return None, f"Error: {e}"
+        return None, f"Error: {e}", rid
 
 
-def post_command(ip: str, payload: dict) -> tuple[str | None, str | None]:
+def post_command(ip: str, payload: dict) -> tuple[str | None, str | None, str, str | None]:
+    """POST /set-navigation-and-power with an auto-generated request_id.
+    Returns (status, error, sent_rid, echoed_rid). echoed_rid is the value the
+    server returned in its response (None on error or if not echoed)."""
+    rid = _make_rid()
     try:
         r = requests.post(
             f"http://{ip}/set-navigation-and-power",
-            json=payload,
+            json={**payload, "request_id": rid},
             timeout=TIMEOUT,
         )
         if r.status_code == 200:
             data = r.json()
-            return data.get("status", "ok"), None
+            return data.get("status", "ok"), None, rid, data.get("request_id")
         try:
             msg = r.json().get("error", r.text)
         except Exception:
             msg = r.text
-        return None, f"HTTP {r.status_code}: {msg}"
+        return None, f"HTTP {r.status_code}: {msg}", rid, None
     except requests.exceptions.ConnectionError:
-        return None, "Connection refused"
+        return None, "Connection refused", rid, None
     except requests.exceptions.Timeout:
-        return None, f"Timeout after {TIMEOUT}s"
+        return None, f"Timeout after {TIMEOUT}s", rid, None
     except Exception as e:
-        return None, f"Error: {e}"
+        return None, f"Error: {e}", rid, None
 
 
 def post_hard_stop(ip: str) -> tuple[str | None, str | None]:
@@ -376,21 +413,25 @@ def render_control_panel():
             for k in band_values:
                 band_values[k] = True
             st.session_state.ctrl_bands = band_values
-            ok, err = post_command(
+            ok, err, sent_rid, echo_rid = post_command(
                 st.session_state.device_ip,
                 {k: True for k in band_values},
             )
-            st.session_state.last_cmd_result = ("success", "All bands ON") if ok else ("error", err)
+            st.session_state.last_cmd_result = (
+                _build_cmd_result(ok, err, "All bands ON", sent_rid, echo_rid)
+            )
             st.rerun()
         if qa2.button("All OFF", use_container_width=True):
             for k in band_values:
                 band_values[k] = False
             st.session_state.ctrl_bands = band_values
-            ok, err = post_command(
+            ok, err, sent_rid, echo_rid = post_command(
                 st.session_state.device_ip,
                 {k: False for k in band_values},
             )
-            st.session_state.last_cmd_result = ("success", "All bands OFF") if ok else ("error", err)
+            st.session_state.last_cmd_result = (
+                _build_cmd_result(ok, err, "All bands OFF", sent_rid, echo_rid)
+            )
             st.rerun()
 
     st.divider()
@@ -410,11 +451,10 @@ def render_control_panel():
             payload.update(band_values)
 
         if payload:
-            ok, err = post_command(st.session_state.device_ip, payload)
-            if ok:
-                st.session_state.last_cmd_result = ("success", f"Command queued ({ok})")
-            else:
-                st.session_state.last_cmd_result = ("error", err)
+            ok, err, sent_rid, echo_rid = post_command(st.session_state.device_ip, payload)
+            st.session_state.last_cmd_result = (
+                _build_cmd_result(ok, err, f"Command queued ({ok})", sent_rid, echo_rid)
+            )
 
     # Feedback
     if st.session_state.last_cmd_result:
@@ -439,7 +479,7 @@ def main():
     render_sidebar()
 
     # Fetch status on every run
-    data, err = get_status(st.session_state.device_ip)
+    data, err, _rid = get_status(st.session_state.device_ip)
     if data is not None:
         st.session_state.last_status = data
         st.session_state.last_error = None
