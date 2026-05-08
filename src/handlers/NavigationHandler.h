@@ -2,7 +2,8 @@
 #include <WebServer.h>
 #include "../use_cases/SetNavigationAndPowerUseCase.h"
 
-class NetworkWatchdog;
+class ActivityWatchdog;
 
-void initNavigationHandler(SetNavigationAndPowerUseCase* useCase, NetworkWatchdog* watchdog = nullptr);
+void initNavigationHandler(SetNavigationAndPowerUseCase* useCase,
+                           ActivityWatchdog* watchdog = nullptr, int channelId = -1);
 void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res);

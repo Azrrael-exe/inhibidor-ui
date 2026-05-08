@@ -5,8 +5,8 @@
 
 // Forward declaration — full definition pulled in by GpsCompassHandler.cpp
 class RotorService;
-class NetworkWatchdog;
+class ActivityWatchdog;
 
 void initStatusHandler(GpsModule* gps, CompassModule* compass, RotorService* rotor = nullptr,
-                       NetworkWatchdog* watchdog = nullptr);
+                       ActivityWatchdog* watchdog = nullptr, int channelId = -1);
 void handleGetStatus(const HttpRequest& req, HttpResponse& res);

@@ -16,7 +16,7 @@
 #include "modules/CompassModule.h"
 #include "services/RotorService.h"
 #include "services/NetworkConfig.h"
-#include "services/NetworkWatchdog.h"
+#include "services/ActivityWatchdog.h"
 #include "services/SerialConfigService.h"
 #include "use_cases/SetNavigationAndPowerUseCase.h"
 #include "use_cases/HardStopUseCase.h"
@@ -34,7 +34,13 @@ RotorService  rotorService(&Serial2);  // _txPack + _rxPack = 364 bytes in .bss
 
 SetNavigationAndPowerUseCase setNavAndPowerUseCase(&rotorService);
 HardStopUseCase hardStopUseCase(&rotorService);
-NetworkWatchdog networkWatchdog(&hardStopUseCase, 10000UL);
+
+static void onWatchdogTimeout(void* ctx) {
+    static_cast<HardStopUseCase*>(ctx)->execute();
+}
+ActivityWatchdog activityWatchdog(onWatchdogTimeout, &hardStopUseCase);
+int httpChannelId    = -1;
+int controlChannelId = -1;
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
@@ -96,9 +102,13 @@ void setup() {
     serialConfig.begin(&Serial, mac);
 
     compassModule.begin();
-    initStatusHandler(&gpsModule, &compassModule, &rotorService, &networkWatchdog);
-    initNavigationHandler(&setNavAndPowerUseCase, &networkWatchdog);
-    initHardStopHandler(&hardStopUseCase, &networkWatchdog);
+
+    httpChannelId    = activityWatchdog.registerChannel("http",    10000UL);
+    controlChannelId = activityWatchdog.registerChannel("control", 60000UL);
+
+    initStatusHandler(&gpsModule, &compassModule, &rotorService, &activityWatchdog, httpChannelId);
+    initNavigationHandler(&setNavAndPowerUseCase, &activityWatchdog, httpChannelId);
+    initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
 
     webServer.begin();
     webServer.on("/status",                   HTTP_GET,  handleGetStatus);
@@ -142,16 +152,13 @@ void setup() {
     // to prevent false edge detection on first loop() iteration
     rfPowerSwitch.sync();
 
-    networkWatchdog.setManualOverrideSources(&azimuthForwardSwitch, &azimuthBackwardSwitch,
-                                             &elevationForwardSwitch, &elevationBackwardSwitch,
-                                             &rfPowerSwitch);
-    // Grace period: avoid a spurious trip before the UI's first poll arrives.
-    networkWatchdog.notifyActivity();
+    // Grace period: avoid a spurious trip before the first activity arrives.
+    activityWatchdog.feed(httpChannelId);
+    activityWatchdog.feed(controlChannelId);
 }
 
 void loop() {
     webServer.update();
-    networkWatchdog.update();
     serialConfig.update();
 
     gpsModule.update();
@@ -164,4 +171,13 @@ void loop() {
     elevationForwardSwitch.update();
     elevationBackwardSwitch.update();
     rfPowerSwitch.update();
+
+    bool controlActive = azimuthForwardSwitch.getState()
+                      || azimuthBackwardSwitch.getState()
+                      || elevationForwardSwitch.getState()
+                      || elevationBackwardSwitch.getState()
+                      || !rfPowerSwitch.getState();   // RF switch is active-LOW
+    if (controlActive) activityWatchdog.feed(controlChannelId);
+
+    activityWatchdog.update();
 }
