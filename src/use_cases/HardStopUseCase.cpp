@@ -14,6 +14,7 @@ void HardStopUseCase::execute() {
     for (uint8_t i = 0; i < 7; i++) {
         digitalWrite(BAND_PINS[i], LOW);
     }
+    if (_rfWatchdog) _rfWatchdog->allOff();
 
     // 2. Enviar comando de parada de emergencia al rotor G5500
     if (_service) {

@@ -22,6 +22,14 @@ public:
     bool isTripped() const { return _tripped; }
     int  trippedChannel() const { return _trippedChannel; }
 
+    int           channelCount() const { return _channelCount; }
+    const char*   channelName(int id) const {
+        return (id >= 0 && id < _channelCount) ? _channels[id].name : nullptr;
+    }
+    unsigned long channelTimeoutMs(int id) const {
+        return (id >= 0 && id < _channelCount) ? _channels[id].timeoutMs : 0UL;
+    }
+
 private:
     static constexpr int MAX_CHANNELS = 4;
 

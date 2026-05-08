@@ -332,6 +332,388 @@
 					"body": "{\n  \"status\": \"hard_stop_executed\"\n}"
 				}
 			]
+		},
+		{
+			"name": "GET /get-config",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/get-config",
+					"host": ["{{base_url}}"],
+					"path": ["get-config"]
+				},
+				"description": "Retorna **toda** la configuración runtime del dispositivo en una sola respuesta: red (lo que hay en EEPROM + IP/MAC vivos del stack ethernet), timeout del watchdog de RF y los timeouts de los canales del `ActivityWatchdog`.\n\nÚtil como snapshot inicial al levantar una UI o un cliente — equivalente HTTP del comando Serial `{\"cmd\":\"get-config\"}`, pero ampliado con la configuración del resto de subsistemas.\n\n**Campos de respuesta:**\n- `network.mode` (string): `\"static\"` o `\"dhcp\"`\n- `network.ip` / `subnet` / `gateway` (string): config persistida en EEPROM (en modo dhcp = `0.0.0.0`)\n- `network.currentIp` (string): IP realmente asignada al stack ethernet ahora\n- `network.macAddress` (string): MAC del dispositivo\n- `rf_watchdog.timeout_seconds` (int): timeout del watchdog de RF (volátil)\n- `rf_watchdog.active` (boolean): `true` si al menos una banda RF está encendida\n- `activity_watchdog.channels[]`: array con `{name, timeout_ms}` por canal\n\n**Nota:** la configuración de red sólo se modifica por el canal Serial — este endpoint sólo lee.\n\n**Errores:**\n- `500` — buffer interno desbordado (no debería ocurrir con la configuración por defecto)"
+			},
+			"response": [
+				{
+					"name": "200 OK",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/get-config",
+							"host": ["{{base_url}}"],
+							"path": ["get-config"]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"network\": {\n    \"mode\": \"dhcp\",\n    \"ip\": \"0.0.0.0\",\n    \"subnet\": \"0.0.0.0\",\n    \"gateway\": \"0.0.0.0\",\n    \"currentIp\": \"192.168.1.100\",\n    \"macAddress\": \"DE:AD:BE:EF:FE:ED\"\n  },\n  \"rf_watchdog\": {\n    \"timeout_seconds\": 60,\n    \"active\": false\n  },\n  \"activity_watchdog\": {\n    \"channels\": [\n      { \"name\": \"http\", \"timeout_ms\": 10000 },\n      { \"name\": \"control\", \"timeout_ms\": 60000 }\n    ]\n  }\n}"
+				}
+			]
+		},
+		{
+			"name": "POST /set-network-config",
+			"description": "Modifica la configuración de red persistente y **reinicia el dispositivo** automáticamente. Equivalente HTTP del comando Serial `{\"cmd\":\"set-config\",...}`.\n\n⚠️ **Alto riesgo.** Una IP estática mal configurada deja al equipo aislado por red — la única vía de recuperación es el canal Serial USB.\n\nEl reboot es diferido: el handler responde 200 primero, marca un flag, y el reset se dispara desde `loop()` una vez que la conexión TCP se cierra (el cliente recibe un FIN limpio antes del reset).\n\n**Body:**\n- `mode` (string, requerido): `\"static\"` o `\"dhcp\"`\n- `ip`, `subnet`, `gateway` (string, requeridos en modo static): formato `a.b.c.d`\n- `request_id` (string, opcional): `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores 400** (no se escribe EEPROM, no hay reboot): `missing mode`, `invalid mode`, `missing ip/subnet/gateway`, `invalid ip`/`subnet`/`gateway`, `non-contiguous subnet`, `gateway not in subnet`, `invalid request_id`.\n**Error 500**: `eeprom write failed`.",
+			"item": [
+				{
+					"name": "Set static IP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.5.1\",\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-network-config",
+							"host": ["{{base_url}}"],
+							"path": ["set-network-config"]
+						},
+						"description": "Persiste IP estática en EEPROM y reinicia. `request_id` es opcional — borralo del body si no querés tracking."
+					},
+					"response": [
+						{
+							"name": "200 OK",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.5.1\",\n  \"request_id\": \"<uuid>\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-network-config",
+									"host": ["{{base_url}}"],
+									"path": ["set-network-config"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true,\n  \"request_id\": \"<uuid>\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Reset to DHCP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"dhcp\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-network-config",
+							"host": ["{{base_url}}"],
+							"path": ["set-network-config"]
+						},
+						"description": "Apaga el flag de EEPROM, vuelve a obtención automática (DHCP). El equipo reinicia."
+					},
+					"response": [
+						{
+							"name": "200 OK",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"mode\": \"dhcp\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-network-config",
+									"host": ["{{base_url}}"],
+									"path": ["set-network-config"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true\n}"
+						}
+					]
+				},
+				{
+					"name": "Error 400 — gateway not in subnet",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-network-config",
+							"host": ["{{base_url}}"],
+							"path": ["set-network-config"]
+						},
+						"description": "El gateway `10.0.0.1` no pertenece a la subred `192.168.5.0/24`."
+					},
+					"response": [
+						{
+							"name": "400 Bad Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-network-config",
+									"host": ["{{base_url}}"],
+									"path": ["set-network-config"]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"gateway not in subnet\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "GET /rf-watchdog-timeout",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/rf-watchdog-timeout",
+					"host": ["{{base_url}}"],
+					"path": ["rf-watchdog-timeout"]
+				},
+				"description": "Retorna el timeout actual del watchdog de RF (tiempo máximo en segundos que las bandas pueden estar encendidas antes de disparar un `HardStop` automático) y si actualmente hay alguna banda activa.\n\nEl valor inicial al boot es **60 s**. La configuración es **volátil** — vuelve al default después de cada reinicio.\n\n**Campos de respuesta:**\n- `timeout_seconds` (int): timeout actual en segundos\n- `active` (boolean): `true` si al menos una banda RF está encendida\n\n**Errores:**\n- `503` — Watchdog no disponible (no inicializado)"
+			},
+			"response": [
+				{
+					"name": "200 OK",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/rf-watchdog-timeout",
+							"host": ["{{base_url}}"],
+							"path": ["rf-watchdog-timeout"]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"timeout_seconds\": 60,\n  \"active\": false\n}"
+				}
+			]
+		},
+		{
+			"name": "POST /set-rf-watchdog-timeout",
+			"description": "Modifica el timeout del watchdog de RF en caliente. **No reinicia el cronómetro**: si el watchdog ya estaba contando con bandas encendidas, el nuevo valor se compara contra el `_onSinceMs` actual (un timeout más bajo puede disparar inmediatamente el `HardStop`).\n\nCambio **volátil** — no se persiste en EEPROM y vuelve al default (60 s) tras cada reboot.\n\n**Body:**\n- `timeout_seconds` (int, requerido): nuevo timeout en segundos, rango `[1, 3600]`\n- `request_id` (string, opcional): formato `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores:**\n- `400` — falta `timeout_seconds`\n- `400` — `timeout_seconds` fuera de rango `[1, 3600]`\n- `400` — `request_id` con formato inválido\n- `503` — Watchdog no disponible (no inicializado)",
+			"item": [
+				{
+					"name": "Set timeout (5 min)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"timeout_seconds\": 300,\n  \"request_id\": \"<uuid>\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"host": ["{{base_url}}"],
+							"path": ["set-rf-watchdog-timeout"]
+						},
+						"description": "Sube el timeout a 5 minutos. `request_id` es opcional — borralo del body si no querés tracking."
+					},
+					"response": [
+						{
+							"name": "200 OK",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"timeout_seconds\": 300,\n  \"request_id\": \"<uuid>\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"host": ["{{base_url}}"],
+									"path": ["set-rf-watchdog-timeout"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 300,\n  \"request_id\": \"<uuid>\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Error 400 — fuera de rango",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"timeout_seconds\": 0\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"host": ["{{base_url}}"],
+							"path": ["set-rf-watchdog-timeout"]
+						},
+						"description": "Caso de error esperado: `timeout_seconds` debe estar en `[1, 3600]`."
+					},
+					"response": [
+						{
+							"name": "400 Bad Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"timeout_seconds\": 0\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"host": ["{{base_url}}"],
+									"path": ["set-rf-watchdog-timeout"]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"timeout_seconds out of range (1..3600)\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Error 400 — falta timeout_seconds",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"host": ["{{base_url}}"],
+							"path": ["set-rf-watchdog-timeout"]
+						},
+						"description": "El campo `timeout_seconds` es requerido."
+					},
+					"response": [
+						{
+							"name": "400 Bad Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"host": ["{{base_url}}"],
+									"path": ["set-rf-watchdog-timeout"]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"missing timeout_seconds\"\n}"
+						}
+					]
+				}
+			]
 		}
 	],
 	"variable": [

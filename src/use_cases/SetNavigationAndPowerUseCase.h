@@ -1,10 +1,13 @@
 #pragma once
 #include <Arduino.h>
 #include "../services/RotorService.h"
+#include "../services/RFOnTimeWatchdog.h"
 
 class SetNavigationAndPowerUseCase {
 public:
     explicit SetNavigationAndPowerUseCase(RotorService* service);
+
+    void setRFOnTimeWatchdog(RFOnTimeWatchdog* wd) { _rfWatchdog = wd; }
 
     // bands[i]: -1 = absent (don't touch), 0 = LOW, 1 = HIGH.
     // errorMsg: caller-owned stack buffer written on validation failure. errorMsgLen must be > 0.
@@ -18,5 +21,6 @@ public:
     );
 
 private:
-    RotorService* _service;
+    RotorService*     _service;
+    RFOnTimeWatchdog* _rfWatchdog = nullptr;
 };

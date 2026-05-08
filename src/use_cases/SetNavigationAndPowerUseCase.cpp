@@ -34,6 +34,7 @@ bool SetNavigationAndPowerUseCase::execute(
     for (uint8_t i = 0; i < 7; i++) {
         if (bands[i] >= 0) {
             digitalWrite(BAND_PINS[i], bands[i] ? HIGH : LOW);
+            if (_rfWatchdog) _rfWatchdog->notifyBand(i, bands[i] != 0);
         }
     }
 

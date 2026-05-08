@@ -12,11 +12,15 @@
 #include "handlers/GpsCompassHandler.h"
 #include "handlers/NavigationHandler.h"
 #include "handlers/HardStopHandler.h"
+#include "handlers/RFWatchdogHandler.h"
+#include "handlers/ConfigHandler.h"
+#include "handlers/NetworkConfigHandler.h"
 #include "modules/GpsModule.h"
 #include "modules/CompassModule.h"
 #include "services/RotorService.h"
 #include "services/NetworkConfig.h"
 #include "services/ActivityWatchdog.h"
+#include "services/RFOnTimeWatchdog.h"
 #include "services/SerialConfigService.h"
 #include "use_cases/SetNavigationAndPowerUseCase.h"
 #include "use_cases/HardStopUseCase.h"
@@ -41,6 +45,11 @@ static void onWatchdogTimeout(void* ctx) {
 ActivityWatchdog activityWatchdog(onWatchdogTimeout, &hardStopUseCase);
 int httpChannelId    = -1;
 int controlChannelId = -1;
+
+static void onRFOnTimeExpired(void* ctx) {
+    static_cast<HardStopUseCase*>(ctx)->execute();
+}
+RFOnTimeWatchdog rfOnTimeWatchdog(onRFOnTimeExpired, &hardStopUseCase, 1UL * 60UL * 1000UL);
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
@@ -106,15 +115,25 @@ void setup() {
     httpChannelId    = activityWatchdog.registerChannel("http",    10000UL);
     controlChannelId = activityWatchdog.registerChannel("control", 60000UL);
 
+    setNavAndPowerUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
+    hardStopUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
+
     initStatusHandler(&gpsModule, &compassModule, &rotorService, &activityWatchdog, httpChannelId);
     initNavigationHandler(&setNavAndPowerUseCase, &gpsModule, &compassModule, &rotorService,
                           &activityWatchdog, httpChannelId);
     initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
+    initRFWatchdogHandler(&rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
+    initConfigHandler(mac, &rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
+    initNetworkConfigHandler(&activityWatchdog, httpChannelId);
 
     webServer.begin();
     webServer.on("/status",                   HTTP_GET,  handleGetStatus);
     webServer.on("/set-navigation-and-power", HTTP_POST, handleSetNavigationAndPower);
     webServer.on("/hard-stop",                HTTP_POST, handleHardStop);
+    webServer.on("/rf-watchdog-timeout",      HTTP_GET,  handleGetRFWatchdogTimeout);
+    webServer.on("/set-rf-watchdog-timeout",  HTTP_POST, handleSetRFWatchdogTimeout);
+    webServer.on("/get-config",               HTTP_GET,  handleGetConfig);
+    webServer.on("/set-network-config",       HTTP_POST, handleSetNetworkConfig);
 
     pinMode(RF_BAND_0, OUTPUT);
     pinMode(RF_BAND_1, OUTPUT);
@@ -123,6 +142,11 @@ void setup() {
     pinMode(RF_BAND_4, OUTPUT);
     pinMode(RF_BAND_5, OUTPUT);
     pinMode(RF_BAND_6, OUTPUT);
+
+    pinMode(RED_LED_PIN,         OUTPUT);
+    pinMode(ACTIVITY_BUZZER_PIN, OUTPUT);
+    digitalWrite(RED_LED_PIN,         LOW);
+    digitalWrite(ACTIVITY_BUZZER_PIN, LOW);
 
     // ─── Railguard: Ensure all RF bands are OFF at startup ─────────────────────
     deactivateRFPower(nullptr);
@@ -162,6 +186,13 @@ void loop() {
     webServer.update();
     serialConfig.update();
 
+    // Deferred reboot after successful POST /set-network-config — runs only after
+    // WebServer::update() has dispatched the response and called _client.stop(),
+    // so the client gets a clean FIN before the watchdog reset fires.
+    if (isNetworkConfigRebootPending()) {
+        NetworkConfig::reboot();
+    }
+
     gpsModule.update();
     compassModule.update();
 
@@ -180,5 +211,16 @@ void loop() {
                       || !rfPowerSwitch.getState();   // RF switch is active-LOW
     if (controlActive) activityWatchdog.feed(controlChannelId);
 
+    rfOnTimeWatchdog.update();
     activityWatchdog.update();
+
+    // Mirror "any RF band ON" → red LED + buzzer. Edge-detected to avoid
+    // redundant digitalWrite in every loop iteration.
+    static bool prevRfActive = false;
+    bool rfActive = rfOnTimeWatchdog.isAnyOn();
+    if (rfActive != prevRfActive) {
+        digitalWrite(RED_LED_PIN,         rfActive ? HIGH : LOW);
+        digitalWrite(ACTIVITY_BUZZER_PIN, rfActive ? HIGH : LOW);
+        prevRfActive = rfActive;
+    }
 }

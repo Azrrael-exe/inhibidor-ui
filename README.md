@@ -232,6 +232,216 @@ curl -X POST http://<ip>/hard-stop
 
 ---
 
+### GET /rf-watchdog-timeout
+
+Retorna el timeout actual del watchdog de RF (tiempo máximo en segundos que las bandas pueden estar encendidas antes de disparar un `HardStop` automático) y si actualmente hay alguna banda activa.
+
+El valor inicial al boot es **60 s**, definido en el constructor de `RFOnTimeWatchdog` en `main.cpp`. La configuración es **volátil**: vuelve al default después de cada reinicio.
+
+**Response:**
+
+```json
+{ "timeout_seconds": 60, "active": false }
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timeout_seconds` | int | Timeout actual en segundos |
+| `active` | boolean | `true` si al menos una banda RF está encendida ahora mismo |
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 503 | Watchdog no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl http://<ip>/rf-watchdog-timeout
+```
+
+---
+
+### GET /get-config
+
+Retorna **toda** la configuración runtime del dispositivo en una sola respuesta: red (lo que hay en EEPROM + IP/MAC vivos del stack ethernet), timeout del watchdog de RF y los timeouts de los canales del `ActivityWatchdog`.
+
+Útil como snapshot inicial al levantar una UI o un cliente — equivalente HTTP del comando Serial `{"cmd":"get-config"}`, pero ampliado con la configuración del resto de subsistemas.
+
+**Response:**
+
+```json
+{
+  "network": {
+    "mode": "dhcp",
+    "ip": "0.0.0.0",
+    "subnet": "0.0.0.0",
+    "gateway": "0.0.0.0",
+    "currentIp": "192.168.1.100",
+    "macAddress": "DE:AD:BE:EF:FE:ED"
+  },
+  "rf_watchdog": {
+    "timeout_seconds": 60,
+    "active": false
+  },
+  "activity_watchdog": {
+    "channels": [
+      { "name": "http",    "timeout_ms": 10000 },
+      { "name": "control", "timeout_ms": 60000 }
+    ]
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `network.mode` | string | `"static"` si la EEPROM tiene config válida y el flag activo; `"dhcp"` si no |
+| `network.ip` / `subnet` / `gateway` | string | Config almacenada en EEPROM (en modo `dhcp` aparecen como `0.0.0.0`) |
+| `network.currentIp` | string | IP **realmente asignada** al stack ethernet ahora mismo |
+| `network.macAddress` | string | MAC actual del dispositivo |
+| `rf_watchdog.timeout_seconds` | int | Timeout del watchdog de RF (volátil — vuelve al default tras reboot) |
+| `rf_watchdog.active` | boolean | `true` si al menos una banda RF está encendida |
+| `activity_watchdog.channels[].name` | string | Nombre del canal (`http`, `control`, etc.) |
+| `activity_watchdog.channels[].timeout_ms` | int | Timeout del canal en milisegundos |
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 500 | Buffer interno desbordado (no debería ocurrir con la configuración por defecto) |
+
+**Ejemplo:**
+
+```bash
+curl http://<ip>/get-config
+```
+
+> **Nota:** este endpoint solo **lee**. Para modificar la configuración de red ver `POST /set-network-config` (HTTP) o el canal Serial (`{"cmd":"set-config",...}`).
+
+---
+
+### POST /set-network-config
+
+Modifica la configuración de red persistente y **reinicia el dispositivo** automáticamente para que la nueva IP tome efecto. Es el equivalente HTTP del comando Serial `{"cmd":"set-config",...}`.
+
+> ⚠️ **Operación de alto riesgo.** Una IP estática mal configurada (subred equivocada, gateway inalcanzable, IP duplicada) deja al equipo aislado por red — la única vía de recuperación es el canal Serial USB. Validá la config en una red de prueba antes de aplicarla a equipos en producción.
+
+El reboot es diferido: el handler responde 200 primero, marca un flag, y el reset se dispara desde `loop()` una vez que `WebServer` cierra la conexión TCP. Así el cliente HTTP recibe un FIN limpio antes del reinicio.
+
+**Request body (modo DHCP):**
+
+```json
+{ "mode": "dhcp", "request_id": "abc123" }
+```
+
+**Request body (modo estático):**
+
+```json
+{
+  "mode": "static",
+  "ip": "192.168.5.50",
+  "subnet": "255.255.255.0",
+  "gateway": "192.168.5.1",
+  "request_id": "abc123"
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `mode` | string | `"static"` o `"dhcp"`. Requerido. |
+| `ip`, `subnet`, `gateway` | string | Sólo en modo `static`. IPs en formato `a.b.c.d`. |
+| `request_id` | string (opcional) | `[A-Za-z0-9_-]{1,36}`. Se echo-devuelve en la respuesta. |
+
+**Response (éxito):**
+
+```json
+{ "status": "saved", "reboot": true, "request_id": "abc123" }
+```
+
+**Errores** (no se escribe la EEPROM, no hay reboot — mismas validaciones que el flujo Serial):
+
+| HTTP | Mensaje | Causa |
+|------|---------|-------|
+| 400 | `missing mode` | Falta el campo `mode` |
+| 400 | `invalid mode` | `mode` no es `"static"` ni `"dhcp"` |
+| 400 | `missing ip/subnet/gateway` | Modo `static` sin alguno de los 3 campos |
+| 400 | `invalid ip` / `invalid subnet` / `invalid gateway` | Formato inválido o `0.0.0.0` / `255.255.255.255` |
+| 400 | `non-contiguous subnet` | Máscara no contigua |
+| 400 | `gateway not in subnet` | Gateway fuera de la subred |
+| 400 | `invalid request_id` | `request_id` no matchea `[A-Za-z0-9_-]{1,36}` |
+| 500 | `eeprom write failed` | Falla al escribir EEPROM |
+
+**Ejemplos:**
+
+```bash
+# Cambiar a IP estática
+curl -X POST http://<ip>/set-network-config \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"static","ip":"192.168.5.50","subnet":"255.255.255.0","gateway":"192.168.5.1"}'
+
+# Volver a DHCP
+curl -X POST http://<ip>/set-network-config \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"dhcp"}'
+```
+
+---
+
+### POST /set-rf-watchdog-timeout
+
+Modifica el timeout del watchdog de RF en caliente. **No reinicia el cronómetro**: si el watchdog ya estaba contando con bandas encendidas, el nuevo valor se compara contra el `_onSinceMs` actual (un timeout más bajo puede disparar inmediatamente el `HardStop`).
+
+Cambio **volátil** — no se persiste en EEPROM y vuelve al default tras cada reboot.
+
+**Request body:**
+
+```json
+{ "timeout_seconds": 120, "request_id": "abc123" }
+```
+
+| Campo | Tipo | Rango | Descripción |
+|-------|------|-------|-------------|
+| `timeout_seconds` | int | 1 – 3600 | Nuevo timeout en segundos. Requerido. |
+| `request_id` | string (opcional) | `[A-Za-z0-9_-]{1,36}` | Echo-devuelto en la respuesta para correlación. |
+
+**Response:**
+
+```json
+{ "status": "updated", "timeout_seconds": 120, "request_id": "abc123" }
+```
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 400 | Falta `timeout_seconds` |
+| 400 | `timeout_seconds` fuera de rango `[1, 3600]` |
+| 400 | `request_id` con formato inválido |
+| 503 | Watchdog no disponible (no inicializado) |
+
+**Ejemplos:**
+
+```bash
+# Subir el timeout a 5 minutos
+curl -X POST http://<ip>/set-rf-watchdog-timeout \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":300}'
+
+# Con request_id para correlacionar
+curl -X POST http://<ip>/set-rf-watchdog-timeout \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":90,"request_id":"job_42"}'
+
+# Error esperado — fuera de rango
+curl -X POST http://<ip>/set-rf-watchdog-timeout \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":0}'
+# → HTTP 400  {"error":"timeout_seconds out of range (1..3600)"}
+```
+
+---
+
 ## Configuración de red por Serial (JSON)
 
 La IP, máscara y gateway del dispositivo se configuran enviando comandos JSON por el **puerto Serial USB** (`Serial`, 115200 bps, 8-N-1). La configuración se persiste en la EEPROM interna del ATmega2560 y sobrevive a power-cycles.
