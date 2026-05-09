@@ -9,7 +9,20 @@ Expone una API HTTP en el puerto 80 para monitoreo y control del sistema.
 
 Base URL: `http://<ip-del-dispositivo>`
 
-Todas las respuestas son JSON. En caso de error, la respuesta incluye un campo `error` con descripción del problema (HTTP 4xx/5xx).
+Todas las respuestas — éxito y error — son JSON e incluyen `timestamp` y `time_valid` en la raíz (ver sección siguiente).
+
+### Timestamp en todas las respuestas
+
+Toda respuesta HTTP (200 OK y errores 4xx/5xx) incluye en la raíz del JSON dos campos derivados de la consulta al receptor GPS al momento de armar la respuesta:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timestamp` | string | Fecha y hora UTC en formato ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`). |
+| `time_valid` | boolean | `true` si el GPS está entregando tramas NMEA con hora parseada; `false` si aún no se recibió un RMC válido (arranque temprano, sin antena, etc.). Cuando es `false`, `timestamp` muestra `"0000-00-00T00:00:00Z"`. |
+
+> **Nota:** si el GPS pierde señal después de haber tenido fix, `timestamp` refleja la última hora capturada (no avanza). Usar `time_valid` para discriminar la fiabilidad.
+
+---
 
 ### Correlación request ↔ response (`request_id`)
 
@@ -55,9 +68,13 @@ Retorna el estado completo del sistema. Acepta `request_id` como query param opc
     "band_5": false,
     "band_6": true
   },
-  "request_id": "abc123"
+  "request_id": "abc123",
+  "timestamp": "2026-02-24T15:30:00Z",
+  "time_valid": true
 }
 ```
+
+> `gps.datetime` y `timestamp` raíz provienen de la misma fuente GPS y son iguales; `gps.datetime` se mantiene por compatibilidad.
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
@@ -114,8 +131,8 @@ Todos los campos son opcionales — los campos omitidos no modifican el estado a
 
 | Campo | Tipo | Rango | Descripción |
 |-------|------|-------|-------------|
-| `azimuth` | float | 0.0 – 360.0 | Ángulo de destino en azimuth (opcional) |
-| `elevation` | float | 0.0 – 90.0 | Ángulo de destino en elevación (opcional) |
+| `azimuth` | float | 0.0 – 450.0 | Ángulo de destino en azimuth (opcional). El rango excede 360° porque el G5500 admite overlap mecánico. |
+| `elevation` | float | 0.0 – 180.0 | Ángulo de destino en elevación (opcional). |
 | `band_0` … `band_6` | boolean | — | `true` activa la banda, `false` la desactiva (opcionales) |
 | `request_id` | string | `[A-Za-z0-9_-]{1,36}` | Identificador opcional. Si se envía con formato inválido, el comando **no** se encola y se retorna 400. |
 
@@ -146,7 +163,9 @@ Devuelve el mismo payload que `GET /status`, prefijado con `"status":"queued"` p
     "band_5": false,
     "band_6": true
   },
-  "request_id": "abc123"
+  "request_id": "abc123",
+  "timestamp": "2026-02-24T15:30:00Z",
+  "time_valid": true
 }
 ```
 
@@ -154,8 +173,8 @@ Devuelve el mismo payload que `GET /status`, prefijado con `"status":"queued"` p
 
 | HTTP | Condición |
 |------|-----------|
-| 400 | `azimuth` fuera de rango `[0, 360]` |
-| 400 | `elevation` fuera de rango `[0, 90]` |
+| 400 | `azimuth` fuera de rango `[0, 450]` |
+| 400 | `elevation` fuera de rango `[0, 180]` |
 | 400 | `request_id` con formato inválido (no matchea `[A-Za-z0-9_-]{1,36}`) |
 | 503 | Rotor no disponible (no inicializado) |
 
@@ -190,8 +209,8 @@ curl -X POST http://<ip>/set-navigation-and-power \
 # Error esperado — azimuth fuera de rango
 curl -X POST http://<ip>/set-navigation-and-power \
   -H "Content-Type: application/json" \
-  -d '{"azimuth":400.0}'
-# → HTTP 400  {"error":"azimuth out of range [0,360]"}
+  -d '{"azimuth":500.0}'
+# → HTTP 400  {"error":"azimuth out of range [0,450]"}
 
 # Error esperado — request_id inválido (espacios)
 curl -X POST http://<ip>/set-navigation-and-power \
@@ -204,9 +223,9 @@ curl -X POST http://<ip>/set-navigation-and-power \
 
 ### POST /hard-stop
 
-Parada de emergencia. **Apaga las 7 bandas de RF** y **envía comando de stop al rotor G5500** (azimuth y elevación). No recibe body.
+Parada de emergencia explícita solicitada por el operador. **Apaga las 7 bandas de RF** y **envía al G5500 el comando `SYSTEM_KILL`** (key `0xFF`, value `0x01`) — prioridad máxima en el firmware del rotor: cancela cualquier movimiento activo y detiene los motores. No recibe body.
 
-Este mismo flujo lo dispara el `ActivityWatchdog` automáticamente si pierde actividad de control o HTTP — el endpoint es la versión manual del mismo procedimiento.
+Este endpoint es la **única** vía que ejecuta `SYSTEM_KILL`. Los watchdogs y el switch físico de homming **no** disparan este flujo — disparan `POST /homming` en su lugar.
 
 **Request:**
 
@@ -215,7 +234,7 @@ Sin body. Cualquier contenido enviado se ignora. **No** acepta `request_id` (a d
 **Response:**
 
 ```json
-{ "status": "hard_stop_executed" }
+{ "status": "hard_stop_executed", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
 ```
 
 **Errores:**
@@ -232,16 +251,53 @@ curl -X POST http://<ip>/hard-stop
 
 ---
 
+### POST /homming
+
+Homming. **Apaga las 7 bandas de RF** y **envía al G5500 el comando `SYSTEM_HOME`** (key `0xFF`, value `0x02`) — prioridad máxima en el firmware del rotor: lleva el rotor a la posición home definida internamente por el G5500. No recibe body.
+
+Este mismo flujo se dispara por cuatro vías:
+
+| Fuente | Descripción |
+|--------|-------------|
+| `POST /homming` | Versión manual vía HTTP (este endpoint). |
+| Botón físico (`HOMMING_SWITCH_PIN` / A0) | Al presionar el botón conectado al pin A0, el firmware detecta el flanco ascendente (activo-HIGH, debounce 50 ms) y ejecuta el Homming de forma inmediata e independiente del estado de la red. |
+| `ActivityWatchdog` | Disparo automático si no llega actividad HTTP en 10 s o actividad de control en 60 s. |
+| `RFOnTimeWatchdog` | Disparo automático si una banda RF excede el tiempo máximo encendida (default 60 s, configurable). |
+
+**Request:**
+
+Sin body. Cualquier contenido enviado se ignora. **No** acepta `request_id`.
+
+**Response:**
+
+```json
+{ "status": "homming_executed", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
+```
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 503 | Use case no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl -X POST http://<ip>/homming
+```
+
+---
+
 ### GET /rf-watchdog-timeout
 
-Retorna el timeout actual del watchdog de RF (tiempo máximo en segundos que las bandas pueden estar encendidas antes de disparar un `HardStop` automático) y si actualmente hay alguna banda activa.
+Retorna el timeout actual del watchdog de RF (tiempo máximo en segundos que las bandas pueden estar encendidas antes de disparar un `Homming` automático) y si actualmente hay alguna banda activa.
 
 El valor inicial al boot es **60 s**, definido en el constructor de `RFOnTimeWatchdog` en `main.cpp`. La configuración es **volátil**: vuelve al default después de cada reinicio.
 
 **Response:**
 
 ```json
-{ "timeout_seconds": 60, "active": false }
+{ "timeout_seconds": 60, "active": false, "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
 ```
 
 | Campo | Tipo | Descripción |
@@ -290,7 +346,9 @@ Retorna **toda** la configuración runtime del dispositivo en una sola respuesta
       { "name": "http",    "timeout_ms": 10000 },
       { "name": "control", "timeout_ms": 60000 }
     ]
-  }
+  },
+  "timestamp": "2026-02-24T15:30:00Z",
+  "time_valid": true
 }
 ```
 
@@ -356,7 +414,7 @@ El reboot es diferido: el handler responde 200 primero, marca un flag, y el rese
 **Response (éxito):**
 
 ```json
-{ "status": "saved", "reboot": true, "request_id": "abc123" }
+{ "status": "saved", "reboot": true, "request_id": "abc123", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
 ```
 
 **Errores** (no se escribe la EEPROM, no hay reboot — mismas validaciones que el flujo Serial):
@@ -390,7 +448,7 @@ curl -X POST http://<ip>/set-network-config \
 
 ### POST /set-rf-watchdog-timeout
 
-Modifica el timeout del watchdog de RF en caliente. **No reinicia el cronómetro**: si el watchdog ya estaba contando con bandas encendidas, el nuevo valor se compara contra el `_onSinceMs` actual (un timeout más bajo puede disparar inmediatamente el `HardStop`).
+Modifica el timeout del watchdog de RF en caliente. **No reinicia el cronómetro**: si el watchdog ya estaba contando con bandas encendidas, el nuevo valor se compara contra el `_onSinceMs` actual (un timeout más bajo puede disparar inmediatamente el `Homming`).
 
 Cambio **volátil** — no se persiste en EEPROM y vuelve al default tras cada reboot.
 
@@ -408,7 +466,7 @@ Cambio **volátil** — no se persiste en EEPROM y vuelve al default tras cada r
 **Response:**
 
 ```json
-{ "status": "updated", "timeout_seconds": 120, "request_id": "abc123" }
+{ "status": "updated", "timeout_seconds": 120, "request_id": "abc123", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
 ```
 
 **Errores:**
@@ -550,7 +608,7 @@ Si configuraste una IP estática y el equipo no responde por la red (subred equi
 3. Enviá `{"cmd":"set-config","mode":"dhcp"}` (o reescribí la IP correcta).
 4. El equipo reinicia y vuelve a estar accesible por red.
 
-Si la EEPROM se corrompe (magic byte o CRC inválidos), el firmware trata el contenido como ausente y bootea en DHCP automáticamente — no hay forma de "brickear" el equipo por una EEPROM en mal estado.
+Si la EEPROM se corrompe (magic byte o CRC inválidos), el firmware trata el contenido como ausente y bootea con IP estática `192.168.1.100` — no hay forma de "brickear" el equipo por una EEPROM en mal estado.
 
 ---
 
@@ -593,6 +651,70 @@ En el panel lateral (sidebar) se puede ajustar:
 
 ---
 
+## Configuraciones por defecto del dispositivo
+
+Resumen de los valores con los que el firmware levanta al boot. Se distinguen tres tipos:
+
+- **Persistente (EEPROM)** — sobrevive a power-cycles; se modifica desde Serial o HTTP.
+- **Volátil** — vuelve al default después de cada reinicio; modificable en caliente.
+- **Hardcoded** — fijo en el firmware; cambia solo recompilando.
+
+### Red
+
+| Parámetro | Default | Tipo | Notas |
+|-----------|---------|------|-------|
+| Modo cold boot | `static 192.168.1.100` | Hardcoded | Si la EEPROM está virgen o con CRC inválido, el firmware **no** intenta DHCP: levanta directo en `192.168.1.100` con subnet `255.255.255.0` y gateway `192.168.1.1` (defaults de la librería Ethernet). Garantiza una IP conocida en arranques de fábrica. |
+| Modo runtime | `static` o `dhcp` (según EEPROM) | EEPROM | Tras la primera escritura via `set-config` (Serial) o `POST /set-network-config`, el boot sigue lo guardado en EEPROM. Si el usuario eligió `dhcp` explícitamente, el firmware sí intenta DHCP y cae a `192.168.1.100` como fallback. |
+| IP fallback DHCP | `192.168.1.100` | Hardcoded | Cuando la EEPROM dice `dhcp` y `Ethernet.begin(mac)` falla (sin servidor DHCP en la red). |
+| MAC | `DE:AD:BE:EF:FE:ED` | Hardcoded | Definida en `main.cpp`. |
+| Puerto HTTP | `80` | Hardcoded | `WebServer webServer(80)`. |
+
+### Serial
+
+| Interfaz | Bitrate | Uso |
+|----------|---------|-----|
+| `Serial` (USB) | 115200 8-N-1 | `Logger` de debug + canal de configuración (`get-config` / `set-config` / `reset-config`). |
+| `Serial1` | 38400 | Receptor GPS BE-880Q (NMEA). |
+| `Serial2` | 115200 | Controlador de rotor G5500 (protocolo LLP). |
+
+### Watchdogs
+
+| Watchdog | Default | Tipo | Cómo modificarlo |
+|----------|---------|------|------------------|
+| `RFOnTimeWatchdog` | `300 s` | Volátil | `POST /set-rf-watchdog-timeout` (rango `1..3600`). Vuelve al default tras reboot. |
+| `ActivityWatchdog` canal `http` | `10 000 ms` | Hardcoded | Recompilar (`registerChannel("http", 10000)` en `main.cpp`). |
+| `ActivityWatchdog` canal `control` | `60 000 ms` | Hardcoded | Recompilar (`registerChannel("control", 60000)` en `main.cpp`). |
+
+Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `RFOnTimeWatchdog` también dispara `HommingUseCase` cuando alguna banda RF supera el tiempo máximo encendida.
+
+### Rotor (G5500)
+
+| Parámetro | Default | Tipo | Notas |
+|-----------|---------|------|-------|
+| Poll interval | `2 000 ms` | Hardcoded | Frecuencia con la que `RotorService::update()` consulta status al G5500. |
+| Poll timeout | `500 ms` | Hardcoded | Espera máxima antes de descartar la respuesta del G5500 y volver a `POLL_IDLE`. |
+| Rango `azimuth` | `0.0 – 450.0` | Hardcoded | Validado por `SetNavigationAndPowerUseCase`. |
+| Rango `elevation` | `0.0 – 180.0` | Hardcoded | Validado por `SetNavigationAndPowerUseCase`. |
+
+### RF / GPIO
+
+| Parámetro | Default | Notas |
+|-----------|---------|-------|
+| Bandas RF al boot | Todas OFF | Railguard explícito en `setup()` antes de habilitar interrupciones / red. |
+| LED rojo + buzzer | Espejo de "alguna banda RF ON" | Edge-detected: se actualiza solo cuando cambia `rfOnTimeWatchdog.isAnyOn()`. |
+| Switch Homming (A0) | Activo-HIGH, edge ascendente | Dispara `HommingUseCase` inmediato. |
+| Switch RF (A1) | Activo-LOW (`INPUT_PULLUP`) | Pulsado → enciende las 7 bandas; soltado → las apaga. |
+| Switches Az/El (A2-A5) | Activo-HIGH | Movimiento manual del rotor mientras se mantiene presionado. |
+
+### Validaciones de API comunes
+
+| Validación | Default | Aplica a |
+|------------|---------|----------|
+| `request_id` formato | `[A-Za-z0-9_-]{1,36}` | `GET /status`, `POST /set-navigation-and-power`, `POST /set-rf-watchdog-timeout`, `POST /set-network-config`. **No** lo aceptan `/hard-stop` ni `/homming`. |
+| `timeout_seconds` rango | `1..3600` | `POST /set-rf-watchdog-timeout`. |
+
+---
+
 ## Hardware
 
 | Componente | Interfaz | Descripción |
@@ -602,6 +724,7 @@ En el panel lateral (sidebar) se puede ajustar:
 | QMC5883L | I2C (0x0D) | Compás magnético |
 | G5500 | Serial @ 115200 | Controlador de rotor (azimuth/elevación) |
 | W5100 | SPI | Módulo Ethernet |
+| Botón Homming | A0 (`HOMMING_SWITCH_PIN`) | Entrada digital activo-HIGH. Al presionarlo dispara Homming inmediato (apaga RF + envía `SYSTEM_HOME` al rotor). |
 
 ---
 

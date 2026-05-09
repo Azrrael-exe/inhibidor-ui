@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "8e2c9e7a-1f3b-4c5d-9e0a-inhibidor0001",
 		"name": "Inhibidor UI",
-		"description": "API HTTP del sistema de control embebido CONTROLLINO MAXI (ATmega2560).\n\nBase URL configurable vía la variable de colección `base_url` (default `http://192.168.1.100`).\n\nTodas las respuestas son JSON. En caso de error, el body incluye un campo `error` con descripción del problema (HTTP 4xx/5xx).\n\n**Correlación request ↔ response (`request_id`):** los endpoints `GET /status` y `POST /set-navigation-and-power` aceptan un campo opcional `request_id` (formato `[A-Za-z0-9_-]{1,36}`) que el servidor echo-devuelve en la respuesta. Si se envía con formato inválido → HTTP 400. `POST /hard-stop` no lo acepta. En esta colección los requests vienen con un `request_id` placeholder (`<uuid>`) deshabilitado por default — habilitalo y reemplazalo con un UUID real para activar el tracking.",
+		"description": "API HTTP del sistema de control embebido CONTROLLINO MAXI (ATmega2560).\n\nBase URL configurable vía la variable de colección `base_url` (default `http://192.168.1.100`).\n\nTodas las respuestas — éxito y error — son JSON e incluyen `timestamp` (ISO 8601 UTC) y `time_valid` (bool) en la raíz. `time_valid: false` indica que el GPS aún no entregó un RMC válido; en ese caso `timestamp` muestra `\"0000-00-00T00:00:00Z\"`.\n\n**Correlación request ↔ response (`request_id`):** los endpoints `GET /status` y `POST /set-navigation-and-power` aceptan un campo opcional `request_id` (formato `[A-Za-z0-9_-]{1,36}`) que el servidor echo-devuelve en la respuesta. Si se envía con formato inválido → HTTP 400. `POST /hard-stop` no lo acepta. En esta colección los requests vienen con un `request_id` placeholder (`<uuid>`) deshabilitado por default — habilitalo y reemplazalo con un UUID real para activar el tracking.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -48,7 +48,7 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": false,\n    \"band_2\": true,\n    \"band_3\": false,\n    \"band_4\": true,\n    \"band_5\": false,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\"\n}"
+					"body": "{\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": false,\n    \"band_2\": true,\n    \"band_3\": false,\n    \"band_4\": true,\n    \"band_5\": false,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				},
 				{
 					"name": "400 Bad Request — invalid request_id",
@@ -71,7 +71,7 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"error\": \"invalid request_id\"\n}"
+					"body": "{\n  \"error\": \"invalid request_id\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
@@ -192,7 +192,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"status\": \"queued\",\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": true,\n    \"band_2\": true,\n    \"band_3\": true,\n    \"band_4\": true,\n    \"band_5\": true,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\"\n}"
+							"body": "{\n  \"status\": \"queued\",\n  \"gps\": {\n    \"lat\": \"19.432608\",\n    \"lon\": \"-99.133209\",\n    \"alt\": \"2240.0\",\n    \"datetime\": \"2026-02-24T15:30:00Z\"\n  },\n  \"heading\": \"273.4\",\n  \"navigation\": {\n    \"azimuth\": \"182.3\",\n    \"elevation\": \"44.7\"\n  },\n  \"power\": {\n    \"band_0\": true,\n    \"band_1\": true,\n    \"band_2\": true,\n    \"band_3\": true,\n    \"band_4\": true,\n    \"band_5\": true,\n    \"band_6\": true\n  },\n  \"request_id\": \"<uuid>\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -242,7 +242,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"azimuth out of range [0,360]\"\n}"
+							"body": "{\n  \"error\": \"azimuth out of range [0,360]\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -292,7 +292,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"invalid request_id\"\n}"
+							"body": "{\n  \"error\": \"invalid request_id\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				}
@@ -308,7 +308,7 @@
 					"host": ["{{base_url}}"],
 					"path": ["hard-stop"]
 				},
-				"description": "Parada de emergencia. Apaga las 7 bandas de RF y envía comando de stop al rotor G5500 (azimuth y elevación). No recibe body.\n\nEste mismo flujo lo dispara el `ActivityWatchdog` automáticamente si pierde actividad de control o HTTP — el endpoint es la versión manual del mismo procedimiento.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
+				"description": "Parada de emergencia. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_KILL` (key `0xFF`, value `0x01`) — prioridad máxima, cancela cualquier movimiento activo y detiene los motores. No recibe body.\n\nEste endpoint es la versión manual de la parada de emergencia solicitada por el operador. Los watchdogs (`ActivityWatchdog` y `RFOnTimeWatchdog`) y el switch físico de homming **no** disparan este flujo — disparan `POST /homming` en su lugar.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
 			},
 			"response": [
 				{
@@ -329,7 +329,42 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"status\": \"hard_stop_executed\"\n}"
+					"body": "{\n  \"status\": \"hard_stop_executed\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+				}
+			]
+		},
+		{
+			"name": "POST /homming",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/homming",
+					"host": ["{{base_url}}"],
+					"path": ["homming"]
+				},
+				"description": "Homming. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_HOME` (key `0xFF`, value `0x02`) — prioridad máxima, lleva el rotor a la posición home definida internamente por el firmware del G5500. No recibe body.\n\nEste mismo flujo lo disparan automáticamente:\n- el `ActivityWatchdog` si pierde actividad de control o HTTP,\n- el `RFOnTimeWatchdog` si una banda de RF excede el tiempo máximo encendida,\n- el switch físico conectado al pin `HOMMING_SWITCH_PIN`.\n\nEl endpoint es la versión manual del mismo procedimiento.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
+			},
+			"response": [
+				{
+					"name": "200 OK",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/homming",
+							"host": ["{{base_url}}"],
+							"path": ["homming"]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"status\": \"homming_executed\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
@@ -364,7 +399,7 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"network\": {\n    \"mode\": \"dhcp\",\n    \"ip\": \"0.0.0.0\",\n    \"subnet\": \"0.0.0.0\",\n    \"gateway\": \"0.0.0.0\",\n    \"currentIp\": \"192.168.1.100\",\n    \"macAddress\": \"DE:AD:BE:EF:FE:ED\"\n  },\n  \"rf_watchdog\": {\n    \"timeout_seconds\": 60,\n    \"active\": false\n  },\n  \"activity_watchdog\": {\n    \"channels\": [\n      { \"name\": \"http\", \"timeout_ms\": 10000 },\n      { \"name\": \"control\", \"timeout_ms\": 60000 }\n    ]\n  }\n}"
+					"body": "{\n  \"network\": {\n    \"mode\": \"dhcp\",\n    \"ip\": \"0.0.0.0\",\n    \"subnet\": \"0.0.0.0\",\n    \"gateway\": \"0.0.0.0\",\n    \"currentIp\": \"192.168.1.100\",\n    \"macAddress\": \"DE:AD:BE:EF:FE:ED\"\n  },\n  \"rf_watchdog\": {\n    \"timeout_seconds\": 60,\n    \"active\": false\n  },\n  \"activity_watchdog\": {\n    \"channels\": [\n      { \"name\": \"http\", \"timeout_ms\": 10000 },\n      { \"name\": \"control\", \"timeout_ms\": 60000 }\n    ]\n  },\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
@@ -418,7 +453,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true,\n  \"request_id\": \"<uuid>\"\n}"
+							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true,\n  \"request_id\": \"<uuid>\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -468,7 +503,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true\n}"
+							"body": "{\n  \"status\": \"saved\",\n  \"reboot\": true,\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -518,7 +553,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"gateway not in subnet\"\n}"
+							"body": "{\n  \"error\": \"gateway not in subnet\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				}
@@ -555,7 +590,7 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"timeout_seconds\": 60,\n  \"active\": false\n}"
+					"body": "{\n  \"timeout_seconds\": 60,\n  \"active\": false,\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
@@ -609,7 +644,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 300,\n  \"request_id\": \"<uuid>\"\n}"
+							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 300,\n  \"request_id\": \"<uuid>\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -659,7 +694,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"timeout_seconds out of range (1..3600)\"\n}"
+							"body": "{\n  \"error\": \"timeout_seconds out of range (1..3600)\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
@@ -709,7 +744,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"missing timeout_seconds\"\n}"
+							"body": "{\n  \"error\": \"missing timeout_seconds\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				}

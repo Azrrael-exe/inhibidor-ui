@@ -1,4 +1,5 @@
 #include "ConfigHandler.h"
+#include "timestamp.h"
 #include "json_helpers.h"
 #include "../services/NetworkConfig.h"
 #include "../services/ActivityWatchdog.h"
@@ -47,7 +48,7 @@ void handleGetConfig(const HttpRequest& req, HttpResponse& res) {
                  s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5]);
     }
 
-    char body[512];
+    char body[640];
     int n = snprintf(body, sizeof(body),
         "{\"network\":{\"mode\":\"%s\",\"ip\":\"%s\",\"subnet\":\"%s\","
         "\"gateway\":\"%s\",\"currentIp\":\"%s\",\"macAddress\":\"%s\"},"
@@ -59,7 +60,9 @@ void handleGetConfig(const HttpRequest& req, HttpResponse& res) {
         (s_rfWd && s_rfWd->isAnyOn()) ? "true" : "false");
 
     if (n < 0 || (size_t)n >= sizeof(body)) {
-        res.json(500, "{\"error\":\"buffer overflow\"}");
+        char errBody[128] = "{\"error\":\"buffer overflow\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(500, errBody);
         return;
     }
 
@@ -73,7 +76,9 @@ void handleGetConfig(const HttpRequest& req, HttpResponse& res) {
                 name ? name : "",
                 s_activityWd->channelTimeoutMs(i));
             if (extra < 0 || (size_t)extra >= sizeof(body) - n) {
-                res.json(500, "{\"error\":\"buffer overflow\"}");
+                char errBody[128] = "{\"error\":\"buffer overflow\"}";
+                injectTimestamp(errBody, sizeof(errBody));
+                res.json(500, errBody);
                 return;
             }
             n += extra;
@@ -82,9 +87,12 @@ void handleGetConfig(const HttpRequest& req, HttpResponse& res) {
 
     int extra = snprintf(body + n, sizeof(body) - n, "]}}");
     if (extra < 0 || (size_t)extra >= sizeof(body) - n) {
-        res.json(500, "{\"error\":\"buffer overflow\"}");
+        char errBody[128] = "{\"error\":\"buffer overflow\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(500, errBody);
         return;
     }
 
+    injectTimestamp(body, sizeof(body));
     res.json(200, body);
 }

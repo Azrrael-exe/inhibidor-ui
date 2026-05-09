@@ -1,20 +1,20 @@
-#include "HardStopHandler.h"
+#include "HommingHandler.h"
 #include "timestamp.h"
 #include "../services/ActivityWatchdog.h"
 
-static HardStopUseCase*  s_useCase    = nullptr;
+static HommingUseCase*   s_useCase    = nullptr;
 static ActivityWatchdog* s_watchdog   = nullptr;
 static int               s_channelId  = -1;
 
-void initHardStopHandler(HardStopUseCase* useCase,
-                         ActivityWatchdog* watchdog, int channelId) {
+void initHommingHandler(HommingUseCase* useCase,
+                        ActivityWatchdog* watchdog, int channelId) {
     s_useCase   = useCase;
     s_watchdog  = watchdog;
     s_channelId = channelId;
 }
 
-// POST /hard-stop
-void handleHardStop(const HttpRequest& req, HttpResponse& res) {
+// POST /homming
+void handleHomming(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_useCase) {
@@ -25,7 +25,7 @@ void handleHardStop(const HttpRequest& req, HttpResponse& res) {
     }
 
     s_useCase->execute();
-    char body[128] = "{\"status\":\"hard_stop_executed\"}";
+    char body[128] = "{\"status\":\"homming_executed\"}";
     injectTimestamp(body, sizeof(body));
     res.json(200, body);
 }

@@ -11,7 +11,7 @@ public:
     // bandIdx must be in [0, NUM_BANDS).
     void notifyBand(uint8_t bandIdx, bool on);
 
-    // Notify that all bands have been forced off (e.g. HardStop).
+    // Notify that all bands have been forced off (e.g. HardStop / Homming).
     void allOff();
 
     // Call once per loop().

@@ -3,8 +3,8 @@
 #include <llp.h>
 
 struct RotorStatus {
-    float azimuthAngle;    // degrees (G5500 key 0xAB, raw uint16_t / 10.0)
-    float elevationAngle;  // degrees (G5500 key 0xBC, raw uint16_t / 10.0)
+    float azimuthAngle;    // degrees in [0, 360) (G5500 key 0xAB, raw int16_t / 10.0, normalizado)
+    float elevationAngle;  // degrees (G5500 key 0xBC, raw int16_t / 10.0)
 };
 
 struct RotorCommand {
@@ -26,8 +26,11 @@ public:
     void enqueuePosition(bool hasAz, float az, bool hasEl, float el);
 
     // key 0xFF, value 0x01 — Highest priority stop sequence
-    void emergencyKill(); 
-    
+    void emergencyKill();
+
+    // key 0xFF, value 0x02 — Homing (prioridad máxima en el G5500)
+    void home();
+
     void stopAzimuth();   // key 0xAA, value 0xA0 — fire-and-forget, sent immediately
     void stopElevation(); // key 0xBB, value 0xB0 — fire-and-forget, sent immediately
 

@@ -1,4 +1,5 @@
 #include "RFWatchdogHandler.h"
+#include "timestamp.h"
 #include "json_helpers.h"
 #include "../services/ActivityWatchdog.h"
 #include <stdio.h>
@@ -22,15 +23,18 @@ void handleGetRFWatchdogTimeout(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_wd) {
-        res.json(503, "{\"error\":\"watchdog not available\"}");
+        char errBody[128] = "{\"error\":\"watchdog not available\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(503, errBody);
         return;
     }
 
-    char body[64];
+    char body[128];
     snprintf(body, sizeof(body),
              "{\"timeout_seconds\":%lu,\"active\":%s}",
              s_wd->getMaxOnMs() / 1000UL,
              s_wd->isAnyOn() ? "true" : "false");
+    injectTimestamp(body, sizeof(body));
     res.json(200, body);
 }
 
@@ -40,7 +44,9 @@ void handleSetRFWatchdogTimeout(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_wd) {
-        res.json(503, "{\"error\":\"watchdog not available\"}");
+        char errBody[128] = "{\"error\":\"watchdog not available\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(503, errBody);
         return;
     }
 
@@ -49,24 +55,30 @@ void handleSetRFWatchdogTimeout(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        res.json(400, "{\"error\":\"invalid request_id\"}");
+        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     if (!jsonHasKey(body, "timeout_seconds")) {
-        res.json(400, "{\"error\":\"missing timeout_seconds\"}");
+        char errBody[128] = "{\"error\":\"missing timeout_seconds\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     long seconds = (long)jsonGetInt(body, "timeout_seconds", -1);
     if (seconds < MIN_TIMEOUT_S || seconds > MAX_TIMEOUT_S) {
-        res.json(400, "{\"error\":\"timeout_seconds out of range (1..3600)\"}");
+        char errBody[128] = "{\"error\":\"timeout_seconds out of range (1..3600)\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     s_wd->setMaxOnMs((unsigned long)seconds * 1000UL);
 
-    char respBody[96];
+    char respBody[160];
     if (ridState == 1) {
         snprintf(respBody, sizeof(respBody),
                  "{\"status\":\"updated\",\"timeout_seconds\":%ld,\"request_id\":\"%s\"}",
@@ -76,5 +88,6 @@ void handleSetRFWatchdogTimeout(const HttpRequest& req, HttpResponse& res) {
                  "{\"status\":\"updated\",\"timeout_seconds\":%ld}",
                  seconds);
     }
+    injectTimestamp(respBody, sizeof(respBody));
     res.json(200, respBody);
 }

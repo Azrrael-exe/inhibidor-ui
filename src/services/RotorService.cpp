@@ -1,5 +1,6 @@
 #include "RotorService.h"
 #include "../logger.h"
+#include <math.h>
 
 RotorService::RotorService(HardwareSerial* serial, unsigned long pollIntervalMs)
     : _serial(serial)
@@ -17,6 +18,13 @@ void RotorService::enqueuePosition(bool hasAz, float az, bool hasEl, float el) {
 void RotorService::emergencyKill() {
     _txPack.clear();
     _txPack.addData(0xFF, (int16_t)0x01);
+    _txPack.write(*_serial);
+    _pendingCmd.pending = false; // Cancel any pending goto
+}
+
+void RotorService::home() {
+    _txPack.clear();
+    _txPack.addData(0xFF, (int16_t)0x02);
     _txPack.write(*_serial);
     _pendingCmd.pending = false; // Cancel any pending goto
 }
@@ -66,8 +74,11 @@ void RotorService::update() {
         _serial->setTimeout(50);
         if (_rxPack.available(*_serial)) {
             if (_rxPack.hasKey(0xAB) && _rxPack.hasKey(0xBC)) {
-                _cachedStatus.azimuthAngle   = _rxPack.getData(0xAB) / 10.0f;
-                _cachedStatus.elevationAngle = _rxPack.getData(0xBC) / 10.0f;
+                // Rotor envía ángulos como int16_t (rango físico ~[-223, +223] para az).
+                // Casteamos para recuperar el signo y normalizamos azimuth a [0, 360).
+                float azSigned = (int16_t)_rxPack.getData(0xAB) / 10.0f;
+                _cachedStatus.azimuthAngle   = fmodf(fmodf(azSigned, 360.0f) + 360.0f, 360.0f);
+                _cachedStatus.elevationAngle = (int16_t)_rxPack.getData(0xBC) / 10.0f;
                 if (!_hasStatus) {
                     LOG("G5500", "Connected");
                 }

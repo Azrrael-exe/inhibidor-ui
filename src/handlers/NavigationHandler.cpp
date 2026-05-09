@@ -1,5 +1,6 @@
 #include "NavigationHandler.h"
 #include "StatusHandler.h"
+#include "timestamp.h"
 #include "json_helpers.h"
 #include "../services/ActivityWatchdog.h"
 #include <Arduino.h>
@@ -34,7 +35,9 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_useCase) {
-        res.json(503, "{\"error\":\"rotor not available\"}");
+        char errBody[128] = "{\"error\":\"rotor not available\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(503, errBody);
         return;
     }
 
@@ -44,7 +47,9 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        res.json(400, "{\"error\":\"invalid request_id\"}");
+        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
@@ -65,7 +70,10 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
 
     char errMsg[48] = {};
     if (!s_useCase->execute(hasAz, az, hasEl, el, bands, errMsg, sizeof(errMsg))) {
-        res.badRequest(errMsg);
+        char errBody[128];
+        snprintf(errBody, sizeof(errBody), "{\"error\":\"%s\"}", errMsg);
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
@@ -73,7 +81,9 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
     size_t n = buildStatusJson(respBody, sizeof(respBody), s_gps, s_compass, s_rotor,
                                "\"status\":\"queued\",");
     if (n == 0) {
-        res.json(200, "{\"status\":\"queued\"}");
+        char errBody[128] = "{\"status\":\"queued\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(200, errBody);
         return;
     }
 
@@ -82,10 +92,13 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
         int extra = snprintf(respBody + n, sizeof(respBody) - n,
                              "\"request_id\":\"%s\"}", rid);
         if (extra < 0 || (size_t)extra >= sizeof(respBody) - n) {
-            res.json(200, "{\"status\":\"queued\"}");
+            char errBody[128] = "{\"status\":\"queued\"}";
+            injectTimestamp(errBody, sizeof(errBody));
+            res.json(200, errBody);
             return;
         }
     }
 
+    injectTimestamp(respBody, sizeof(respBody));
     res.json(200, respBody);
 }

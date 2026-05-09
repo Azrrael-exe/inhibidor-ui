@@ -12,9 +12,11 @@
 #include "handlers/GpsCompassHandler.h"
 #include "handlers/NavigationHandler.h"
 #include "handlers/HardStopHandler.h"
+#include "handlers/HommingHandler.h"
 #include "handlers/RFWatchdogHandler.h"
 #include "handlers/ConfigHandler.h"
 #include "handlers/NetworkConfigHandler.h"
+#include "handlers/timestamp.h"
 #include "modules/GpsModule.h"
 #include "modules/CompassModule.h"
 #include "services/RotorService.h"
@@ -24,6 +26,7 @@
 #include "services/SerialConfigService.h"
 #include "use_cases/SetNavigationAndPowerUseCase.h"
 #include "use_cases/HardStopUseCase.h"
+#include "use_cases/HommingUseCase.h"
 
 // ─── Network configuration ────────────────────────────────────────────────────
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -38,24 +41,26 @@ RotorService  rotorService(&Serial2);  // _txPack + _rxPack = 364 bytes in .bss
 
 SetNavigationAndPowerUseCase setNavAndPowerUseCase(&rotorService);
 HardStopUseCase hardStopUseCase(&rotorService);
+HommingUseCase  hommingUseCase(&rotorService);
 
 static void onWatchdogTimeout(void* ctx) {
-    static_cast<HardStopUseCase*>(ctx)->execute();
+    static_cast<HommingUseCase*>(ctx)->execute();
 }
-ActivityWatchdog activityWatchdog(onWatchdogTimeout, &hardStopUseCase);
+ActivityWatchdog activityWatchdog(onWatchdogTimeout, &hommingUseCase);
 int httpChannelId    = -1;
 int controlChannelId = -1;
 
 static void onRFOnTimeExpired(void* ctx) {
-    static_cast<HardStopUseCase*>(ctx)->execute();
+    static_cast<HommingUseCase*>(ctx)->execute();
 }
-RFOnTimeWatchdog rfOnTimeWatchdog(onRFOnTimeExpired, &hardStopUseCase, 1UL * 60UL * 1000UL);
+RFOnTimeWatchdog rfOnTimeWatchdog(onRFOnTimeExpired, &hommingUseCase, 5UL * 60UL * 1000UL);
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
 DigitalSwitch elevationForwardSwitch(ELEVATION_FORWARD_PIN);
 DigitalSwitch elevationBackwardSwitch(ELEVATION_BACKWARD_PIN);
 DigitalSwitch rfPowerSwitch(RF_POWER_PIN);
+DigitalSwitch hommingSwitch(HOMMING_SWITCH_PIN);
 
 G5500CommandContext azimuthForwardContext   = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_FORWARD,   &rotorService };
 G5500CommandContext azimuthBackwardContext  = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_BACKWARD,  &rotorService };
@@ -76,6 +81,10 @@ void deactivateRFPower(void* context) {
     setNavAndPowerUseCase.execute(false, 0.0f, false, 0.0f, bands, err, sizeof(err));
 }
 
+void triggerHomming(void* context) {
+    hommingUseCase.execute();
+}
+
 void setup() {
     // Disable watchdog promptly after a WDT-induced reset (used by NetworkConfig::reboot).
     wdt_disable();
@@ -85,9 +94,9 @@ void setup() {
     gpsModule.begin(Serial1, 38400);
 
     NetConfig netCfg;
-    bool useStatic = NetworkConfig::load(netCfg) && netCfg.useEepromConfig;
+    bool loaded = NetworkConfig::load(netCfg);
 
-    if (useStatic) {
+    if (loaded && netCfg.useEepromConfig) {
         Ethernet.begin(mac,
                        IPAddress((netCfg.ip      >> 24) & 0xFF, (netCfg.ip      >> 16) & 0xFF,
                                  (netCfg.ip      >>  8) & 0xFF,  netCfg.ip      & 0xFF),
@@ -97,13 +106,18 @@ void setup() {
                        IPAddress((netCfg.subnet  >> 24) & 0xFF, (netCfg.subnet  >> 16) & 0xFF,
                                  (netCfg.subnet  >>  8) & 0xFF,  netCfg.subnet  & 0xFF));
         LOG_F("WebServer", "Static IP from EEPROM: ", Ethernet.localIP());
-    } else {
+    } else if (loaded) {
+        // Usuario eligió DHCP explícitamente vía API.
         if (Ethernet.begin(mac) == 0) {
             Ethernet.begin(mac, fallbackIp);
             LOG_F("WebServer", "DHCP failed, using static fallback: ", Ethernet.localIP());
         } else {
             LOG_F("WebServer", "DHCP OK, IP: ", Ethernet.localIP());
         }
+    } else {
+        // EEPROM virgen/corrupta: estática 192.168.1.100, sin intento de DHCP.
+        Ethernet.begin(mac, fallbackIp);
+        LOG_F("WebServer", "Cold boot, using factory static IP: ", Ethernet.localIP());
     }
     delay(1000);
 
@@ -117,19 +131,23 @@ void setup() {
 
     setNavAndPowerUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
     hardStopUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
+    hommingUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
 
     initStatusHandler(&gpsModule, &compassModule, &rotorService, &activityWatchdog, httpChannelId);
     initNavigationHandler(&setNavAndPowerUseCase, &gpsModule, &compassModule, &rotorService,
                           &activityWatchdog, httpChannelId);
     initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
+    initHommingHandler(&hommingUseCase, &activityWatchdog, httpChannelId);
     initRFWatchdogHandler(&rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
     initConfigHandler(mac, &rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
     initNetworkConfigHandler(&activityWatchdog, httpChannelId);
+    initTimestampService(&gpsModule);
 
     webServer.begin();
     webServer.on("/status",                   HTTP_GET,  handleGetStatus);
     webServer.on("/set-navigation-and-power", HTTP_POST, handleSetNavigationAndPower);
     webServer.on("/hard-stop",                HTTP_POST, handleHardStop);
+    webServer.on("/homming",                  HTTP_POST, handleHomming);
     webServer.on("/rf-watchdog-timeout",      HTTP_GET,  handleGetRFWatchdogTimeout);
     webServer.on("/set-rf-watchdog-timeout",  HTTP_POST, handleSetRFWatchdogTimeout);
     webServer.on("/get-config",               HTTP_GET,  handleGetConfig);
@@ -158,6 +176,7 @@ void setup() {
     elevationForwardSwitch.begin(INPUT);
     elevationBackwardSwitch.begin(INPUT);
     rfPowerSwitch.begin(INPUT_PULLUP);
+    hommingSwitch.begin(INPUT);
 
     azimuthForwardSwitch.setOnTurnOn(sendG5500Command, &azimuthForwardContext);
     azimuthBackwardSwitch.setOnTurnOn(sendG5500Command, &azimuthBackwardContext);
@@ -173,9 +192,12 @@ void setup() {
     rfPowerSwitch.setOnTurnOn(deactivateRFPower);   // HIGH (released)
     rfPowerSwitch.setOnTurnOff(activateRFPower);    // LOW (pressed)
 
+    hommingSwitch.setOnTurnOn(triggerHomming);      // HIGH (pressed) → Homming
+
     // Re-sync switch state AFTER all initialization delays
     // to prevent false edge detection on first loop() iteration
     rfPowerSwitch.sync();
+    hommingSwitch.sync();
 
     // Grace period: avoid a spurious trip before the first activity arrives.
     activityWatchdog.feed(httpChannelId);
@@ -203,6 +225,7 @@ void loop() {
     elevationForwardSwitch.update();
     elevationBackwardSwitch.update();
     rfPowerSwitch.update();
+    hommingSwitch.update();
 
     bool controlActive = azimuthForwardSwitch.getState()
                       || azimuthBackwardSwitch.getState()

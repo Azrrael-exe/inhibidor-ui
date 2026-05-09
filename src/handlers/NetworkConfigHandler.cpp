@@ -1,4 +1,5 @@
 #include "NetworkConfigHandler.h"
+#include "timestamp.h"
 #include "json_helpers.h"
 #include "../services/ActivityWatchdog.h"
 #include "../services/NetworkConfig.h"
@@ -33,13 +34,17 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        res.json(400, "{\"error\":\"invalid request_id\"}");
+        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     char mode[12];
     if (!jsonGetString(body, "mode", mode, sizeof(mode))) {
-        res.json(400, "{\"error\":\"missing mode\"}");
+        char errBody[128] = "{\"error\":\"missing mode\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
@@ -53,32 +58,54 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
         if (!jsonGetString(body, "ip",      ipStr,      sizeof(ipStr))      ||
             !jsonGetString(body, "subnet",  subnetStr,  sizeof(subnetStr))  ||
             !jsonGetString(body, "gateway", gatewayStr, sizeof(gatewayStr))) {
-            res.json(400, "{\"error\":\"missing ip/subnet/gateway\"}");
+            char errBody[128] = "{\"error\":\"missing ip/subnet/gateway\"}";
+            injectTimestamp(errBody, sizeof(errBody));
+            res.json(400, errBody);
             return;
         }
-        if (!parseIPv4(ipStr,      cfg.ip))      { res.json(400, "{\"error\":\"invalid ip\"}");      return; }
-        if (!parseIPv4(subnetStr,  cfg.subnet))  { res.json(400, "{\"error\":\"invalid subnet\"}");  return; }
-        if (!parseIPv4(gatewayStr, cfg.gateway)) { res.json(400, "{\"error\":\"invalid gateway\"}"); return; }
+        if (!parseIPv4(ipStr,      cfg.ip))      {
+            char errBody[128] = "{\"error\":\"invalid ip\"}";
+            injectTimestamp(errBody, sizeof(errBody));
+            res.json(400, errBody);
+            return;
+        }
+        if (!parseIPv4(subnetStr,  cfg.subnet))  {
+            char errBody[128] = "{\"error\":\"invalid subnet\"}";
+            injectTimestamp(errBody, sizeof(errBody));
+            res.json(400, errBody);
+            return;
+        }
+        if (!parseIPv4(gatewayStr, cfg.gateway)) {
+            char errBody[128] = "{\"error\":\"invalid gateway\"}";
+            injectTimestamp(errBody, sizeof(errBody));
+            res.json(400, errBody);
+            return;
+        }
         cfg.useEepromConfig = true;
     } else {
-        res.json(400, "{\"error\":\"invalid mode\"}");
+        char errBody[128] = "{\"error\":\"invalid mode\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     char err[40];
     if (!NetworkConfig::validate(cfg, err, sizeof(err))) {
-        char body400[80];
-        snprintf(body400, sizeof(body400), "{\"error\":\"%s\"}", err);
-        res.json(400, body400);
+        char errBody[128];
+        snprintf(errBody, sizeof(errBody), "{\"error\":\"%s\"}", err);
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(400, errBody);
         return;
     }
 
     if (!NetworkConfig::save(cfg)) {
-        res.json(500, "{\"error\":\"eeprom write failed\"}");
+        char errBody[128] = "{\"error\":\"eeprom write failed\"}";
+        injectTimestamp(errBody, sizeof(errBody));
+        res.json(500, errBody);
         return;
     }
 
-    char respBody[96];
+    char respBody[160];
     if (ridState == 1) {
         snprintf(respBody, sizeof(respBody),
                  "{\"status\":\"saved\",\"reboot\":true,\"request_id\":\"%s\"}", rid);
@@ -86,6 +113,7 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
         snprintf(respBody, sizeof(respBody),
                  "{\"status\":\"saved\",\"reboot\":true}");
     }
+    injectTimestamp(respBody, sizeof(respBody));
     res.json(200, respBody);
 
     s_rebootPending = true;
