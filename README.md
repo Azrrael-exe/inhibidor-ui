@@ -319,6 +319,66 @@ curl http://<ip>/rf-watchdog-timeout
 
 ---
 
+### GET /http-watchdog-timeout
+
+Retorna el timeout actual del canal `http` del `ActivityWatchdog` en segundos. Si no llega tráfico HTTP en este intervalo **y** el canal `control` también está expirado, se dispara `Homming` automático.
+
+El valor inicial al boot es **10 s** (`registerChannel("http", 10000)` en `main.cpp`). La configuración es **volátil**: vuelve al default después de cada reinicio.
+
+**Response:**
+
+```json
+{ "timeout_seconds": 10, "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timeout_seconds` | int | Timeout actual del canal `http` en segundos |
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 503 | Watchdog no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl http://<ip>/http-watchdog-timeout
+```
+
+---
+
+### GET /control-watchdog-timeout
+
+Retorna el timeout actual del canal `control` del `ActivityWatchdog` en segundos. Este canal se alimenta cuando hay actividad en los switches físicos del rotor / RF. Si no llega actividad en este intervalo **y** el canal `http` también está expirado, se dispara `Homming` automático.
+
+El valor inicial al boot es **60 s** (`registerChannel("control", 60000)` en `main.cpp`). La configuración es **volátil**: vuelve al default después de cada reinicio.
+
+**Response:**
+
+```json
+{ "timeout_seconds": 60, "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timeout_seconds` | int | Timeout actual del canal `control` en segundos |
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 503 | Watchdog no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl http://<ip>/control-watchdog-timeout
+```
+
+---
+
 ### GET /get-config
 
 Retorna **toda** la configuración runtime del dispositivo en una sola respuesta: red (lo que hay en EEPROM + IP/MAC vivos del stack ethernet), timeout del watchdog de RF y los timeouts de los canales del `ActivityWatchdog`.
@@ -496,6 +556,81 @@ curl -X POST http://<ip>/set-rf-watchdog-timeout \
   -H "Content-Type: application/json" \
   -d '{"timeout_seconds":0}'
 # → HTTP 400  {"error":"timeout_seconds out of range (1..3600)"}
+```
+
+---
+
+### POST /set-http-watchdog-timeout
+
+Modifica el timeout del canal `http` del `ActivityWatchdog` en caliente. Tras actualizar, el canal se alimenta automáticamente (`feed`) para evitar un trip inmediato si el nuevo valor es menor que el tiempo transcurrido desde la última actividad.
+
+Cambio **volátil** — no se persiste en EEPROM y vuelve al default (10 s) tras cada reboot.
+
+**Request body:**
+
+```json
+{ "timeout_seconds": 30, "request_id": "abc123" }
+```
+
+| Campo | Tipo | Rango | Descripción |
+|-------|------|-------|-------------|
+| `timeout_seconds` | int | 1 – 3600 | Nuevo timeout en segundos. Requerido. |
+| `request_id` | string (opcional) | `[A-Za-z0-9_-]{1,36}` | Echo-devuelto en la respuesta para correlación. |
+
+**Response:**
+
+```json
+{ "status": "updated", "timeout_seconds": 30, "request_id": "abc123", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
+```
+
+**Errores:**
+
+| HTTP | Condición |
+|------|-----------|
+| 400 | Falta `timeout_seconds` |
+| 400 | `timeout_seconds` fuera de rango `[1, 3600]` |
+| 400 | `request_id` con formato inválido |
+| 503 | Watchdog no disponible (no inicializado) |
+
+**Ejemplo:**
+
+```bash
+curl -X POST http://<ip>/set-http-watchdog-timeout \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":30}'
+```
+
+---
+
+### POST /set-control-watchdog-timeout
+
+Misma semántica que `POST /set-http-watchdog-timeout` pero aplica al canal `control` del `ActivityWatchdog`. Cambio **volátil** — vuelve al default (60 s) tras cada reboot.
+
+**Request body:**
+
+```json
+{ "timeout_seconds": 120, "request_id": "abc123" }
+```
+
+| Campo | Tipo | Rango | Descripción |
+|-------|------|-------|-------------|
+| `timeout_seconds` | int | 1 – 3600 | Nuevo timeout en segundos. Requerido. |
+| `request_id` | string (opcional) | `[A-Za-z0-9_-]{1,36}` | Echo-devuelto en la respuesta para correlación. |
+
+**Response:**
+
+```json
+{ "status": "updated", "timeout_seconds": 120, "request_id": "abc123", "timestamp": "2026-02-24T15:30:00Z", "time_valid": true }
+```
+
+**Errores:** idénticos a `POST /set-http-watchdog-timeout`.
+
+**Ejemplo:**
+
+```bash
+curl -X POST http://<ip>/set-control-watchdog-timeout \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":120}'
 ```
 
 ---
@@ -682,8 +817,8 @@ Resumen de los valores con los que el firmware levanta al boot. Se distinguen tr
 | Watchdog | Default | Tipo | Cómo modificarlo |
 |----------|---------|------|------------------|
 | `RFOnTimeWatchdog` | `300 s` | Volátil | `POST /set-rf-watchdog-timeout` (rango `1..3600`). Vuelve al default tras reboot. |
-| `ActivityWatchdog` canal `http` | `10 000 ms` | Hardcoded | Recompilar (`registerChannel("http", 10000)` en `main.cpp`). |
-| `ActivityWatchdog` canal `control` | `60 000 ms` | Hardcoded | Recompilar (`registerChannel("control", 60000)` en `main.cpp`). |
+| `ActivityWatchdog` canal `http` | `10 000 ms` | Volátil | `POST /set-http-watchdog-timeout` (rango `1..3600` s). Vuelve al default tras reboot. |
+| `ActivityWatchdog` canal `control` | `60 000 ms` | Volátil | `POST /set-control-watchdog-timeout` (rango `1..3600` s). Vuelve al default tras reboot. |
 
 Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `RFOnTimeWatchdog` también dispara `HommingUseCase` cuando alguna banda RF supera el tiempo máximo encendida.
 
@@ -710,8 +845,8 @@ Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `R
 
 | Validación | Default | Aplica a |
 |------------|---------|----------|
-| `request_id` formato | `[A-Za-z0-9_-]{1,36}` | `GET /status`, `POST /set-navigation-and-power`, `POST /set-rf-watchdog-timeout`, `POST /set-network-config`. **No** lo aceptan `/hard-stop` ni `/homming`. |
-| `timeout_seconds` rango | `1..3600` | `POST /set-rf-watchdog-timeout`. |
+| `request_id` formato | `[A-Za-z0-9_-]{1,36}` | `GET /status`, `POST /set-navigation-and-power`, `POST /set-rf-watchdog-timeout`, `POST /set-http-watchdog-timeout`, `POST /set-control-watchdog-timeout`, `POST /set-network-config`. **No** lo aceptan `/hard-stop` ni `/homming`. |
+| `timeout_seconds` rango | `1..3600` | `POST /set-rf-watchdog-timeout`, `POST /set-http-watchdog-timeout`, `POST /set-control-watchdog-timeout`. |
 
 ---
 

@@ -14,6 +14,7 @@
 #include "handlers/HardStopHandler.h"
 #include "handlers/HommingHandler.h"
 #include "handlers/RFWatchdogHandler.h"
+#include "handlers/ActivityWatchdogHandler.h"
 #include "handlers/ConfigHandler.h"
 #include "handlers/NetworkConfigHandler.h"
 #include "handlers/timestamp.h"
@@ -139,6 +140,7 @@ void setup() {
     initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
     initHommingHandler(&hommingUseCase, &activityWatchdog, httpChannelId);
     initRFWatchdogHandler(&rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
+    initActivityWatchdogHandler(&activityWatchdog, httpChannelId, controlChannelId);
     initConfigHandler(mac, &rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
     initNetworkConfigHandler(&activityWatchdog, httpChannelId);
     initTimestampService(&gpsModule);
@@ -150,6 +152,10 @@ void setup() {
     webServer.on("/homming",                  HTTP_POST, handleHomming);
     webServer.on("/rf-watchdog-timeout",      HTTP_GET,  handleGetRFWatchdogTimeout);
     webServer.on("/set-rf-watchdog-timeout",  HTTP_POST, handleSetRFWatchdogTimeout);
+    webServer.on("/http-watchdog-timeout",     HTTP_GET,  handleGetHttpWatchdogTimeout);
+    webServer.on("/set-http-watchdog-timeout", HTTP_POST, handleSetHttpWatchdogTimeout);
+    webServer.on("/control-watchdog-timeout",  HTTP_GET,  handleGetControlWatchdogTimeout);
+    webServer.on("/set-control-watchdog-timeout", HTTP_POST, handleSetControlWatchdogTimeout);
     webServer.on("/get-config",               HTTP_GET,  handleGetConfig);
     webServer.on("/set-network-config",       HTTP_POST, handleSetNetworkConfig);
 

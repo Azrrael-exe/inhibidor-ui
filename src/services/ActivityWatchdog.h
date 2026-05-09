@@ -29,6 +29,10 @@ public:
     unsigned long channelTimeoutMs(int id) const {
         return (id >= 0 && id < _channelCount) ? _channels[id].timeoutMs : 0UL;
     }
+    void setChannelTimeoutMs(int id, unsigned long timeoutMs) {
+        if (id < 0 || id >= _channelCount) return;
+        _channels[id].timeoutMs = timeoutMs;
+    }
 
 private:
     static constexpr int MAX_CHANNELS = 4;
