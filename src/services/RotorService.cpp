@@ -16,17 +16,21 @@ void RotorService::enqueuePosition(bool hasAz, float az, bool hasEl, float el) {
 }
 
 void RotorService::emergencyKill() {
+    while (_serial->available()) { _serial->read(); }
+    _pollState = POLL_IDLE;
     _txPack.clear();
     _txPack.addData(0xFF, (int16_t)0x01);
     _txPack.write(*_serial);
-    _pendingCmd.pending = false; // Cancel any pending goto
+    _pendingCmd.pending = false;
 }
 
 void RotorService::home() {
+    while (_serial->available()) { _serial->read(); }
+    _pollState = POLL_IDLE;
     _txPack.clear();
     _txPack.addData(0xFF, (int16_t)0x02);
     _txPack.write(*_serial);
-    _pendingCmd.pending = false; // Cancel any pending goto
+    _pendingCmd.pending = false;
 }
 
 void RotorService::stopAzimuth() {
@@ -71,7 +75,7 @@ void RotorService::update() {
     }
 
     if (_serial->available()) {
-        _serial->setTimeout(50);
+        _serial->setTimeout(5);
         if (_rxPack.available(*_serial)) {
             if (_rxPack.hasKey(0xAB) && _rxPack.hasKey(0xBC)) {
                 // Rotor envía ángulos como int16_t (rango físico ~[-223, +223] para az).

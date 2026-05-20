@@ -77,7 +77,7 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
         return;
     }
 
-    char respBody[512];
+    char respBody[440];
     size_t n = buildStatusJson(respBody, sizeof(respBody), s_gps, s_compass, s_rotor,
                                "\"status\":\"queued\",");
     if (n == 0) {

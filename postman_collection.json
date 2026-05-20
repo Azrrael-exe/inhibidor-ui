@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "8e2c9e7a-1f3b-4c5d-9e0a-inhibidor0001",
 		"name": "Inhibidor UI",
-		"description": "API HTTP del sistema de control embebido CONTROLLINO MAXI (ATmega2560).\n\nBase URL configurable vía la variable de colección `base_url` (default `http://192.168.1.100`).\n\nTodas las respuestas — éxito y error — son JSON e incluyen `timestamp` (ISO 8601 UTC) y `time_valid` (bool) en la raíz. `time_valid: false` indica que el GPS aún no entregó un RMC válido; en ese caso `timestamp` muestra `\"0000-00-00T00:00:00Z\"`.\n\n**Correlación request ↔ response (`request_id`):** los endpoints `GET /status`, `POST /set-navigation-and-power`, `POST /set-rf-watchdog-timeout`, `POST /set-http-watchdog-timeout`, `POST /set-control-watchdog-timeout` y `POST /set-network-config` aceptan un campo opcional `request_id` (formato `[A-Za-z0-9_-]{1,36}`) que el servidor echo-devuelve en la respuesta. Si se envía con formato inválido → HTTP 400. `POST /hard-stop` y `POST /homming` no lo aceptan.\n\nEn esta colección los requests muestran un `request_id` de ejemplo corto (`abc123`). Para `GET /status` el query param viene deshabilitado por default — habilitalo si querés enviarlo. Para los POST está embebido en el body — borralo si no querés tracking. Reemplazalo por un id propio (max 36 chars, `[A-Za-z0-9_-]`) en cada llamada para correlación efectiva.",
+		"description": "API HTTP del sistema de control embebido CONTROLLINO MAXI (ATmega2560).\n\nBase URL configurable vía la variable de colección `base_url` (default `http://192.168.1.100`).\n\nTodas las respuestas — éxito y error — son JSON e incluyen `timestamp` (ISO 8601 UTC) y `time_valid` (bool) en la raíz. `time_valid: false` indica que el GPS aún no entregó un RMC válido; en ese caso `timestamp` muestra `\"0000-00-00T00:00:00Z\"`.\n\n**Correlación request ↔ response (`request_id`):** los endpoints `GET /status`, `POST /set-navigation-and-power`, `POST /config/network` y `POST /config/watchdog` aceptan un campo opcional `request_id` (formato `[A-Za-z0-9_-]{1,36}`) que el servidor echo-devuelve en la respuesta. Si se envía con formato inválido → HTTP 400. `POST /hard-stop` y `POST /homming` no lo aceptan.\n\nEn esta colección los requests muestran un `request_id` de ejemplo corto (`abc123`). Para `GET /status` el query param viene deshabilitado por default — habilitalo si querés enviarlo. Para los POST está embebido en el body — borralo si no querés tracking. Reemplazalo por un id propio (max 36 chars, `[A-Za-z0-9_-]`) en cada llamada para correlación efectiva.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -24,7 +24,7 @@
 						}
 					]
 				},
-				"description": "Retorna el estado completo del sistema: GPS, heading, posición del rotor y estado de las 7 bandas RF.\n\n**Query params:**\n- `request_id` (opcional): identificador `[A-Za-z0-9_-]{1,36}` que se echo-devuelve para correlación.\n\n**Campos de respuesta:**\n- `gps.lat` / `gps.lon` (string): grados decimales\n- `gps.alt` (string): metros\n- `gps.datetime` (string): UTC ISO 8601\n- `heading` (string): rumbo del compás 0–360°\n- `navigation.azimuth` / `navigation.elevation` (string): ángulos del rotor (`\"0.0\"` si el G5500 no responde)\n- `power.band_0` … `power.band_6` (boolean): estado actual de cada banda RF\n- `request_id` (string, opcional): solo presente si fue enviado en el request.\n\n**Errores:**\n- `400` — `request_id` con formato inválido"
+				"description": "Retorna el estado completo del sistema: GPS, heading, posición del rotor y estado de las 7 bandas RF.\n\n**Query params:**\n- `request_id` (opcional): identificador `[A-Za-z0-9_-]{1,36}` que se echo-devuelve para correlación.\n\n**Errores:**\n- `400` — `request_id` con formato inválido"
 			},
 			"response": [
 				{
@@ -77,7 +77,7 @@
 		},
 		{
 			"name": "POST /set-navigation-and-power",
-			"description": "Envía ángulos de goto al rotor y/o activa/desactiva bandas de RF en un solo request. Todos los campos del body son opcionales — los omitidos no modifican el estado actual.\n\nLa respuesta devuelve el mismo payload que `GET /status`, prefijado con `\"status\":\"queued\"`. Los campos `navigation.*` reflejan la posición **actual** del rotor (no el target recién encolado). Si el body incluyó `request_id`, se echo-devuelve como último campo.\n\n**Campo opcional `request_id`** (string, formato `[A-Za-z0-9_-]{1,36}`): se echo-devuelve para correlación. Si está presente con formato inválido, el comando **no** se encola y se retorna 400.\n\n**Errores:**\n- `400` — `azimuth` fuera de `[0, 360]`\n- `400` — `elevation` fuera de `[0, 90]`\n- `400` — `request_id` con formato inválido\n- `503` — Rotor no disponible (no inicializado)",
+			"description": "Envía ángulos de goto al rotor y/o activa/desactiva bandas de RF en un solo request. Todos los campos del body son opcionales — los omitidos no modifican el estado actual.\n\nLa respuesta devuelve el mismo payload que `GET /status`, prefijado con `\"status\":\"queued\"`. Los campos `navigation.*` reflejan la posición **actual** del rotor (no el target recién encolado). Si el body incluyó `request_id`, se echo-devuelve como último campo.\n\n**Errores:**\n- `400` — `azimuth` fuera de `[0, 450]`\n- `400` — `elevation` fuera de `[0, 180]`\n- `400` — `request_id` con formato inválido\n- `503` — Rotor no disponible (no inicializado)",
 			"item": [
 				{
 					"name": "Solo ángulos (azimuth + elevation)",
@@ -97,8 +97,7 @@
 							"raw": "{{base_url}}/set-navigation-and-power",
 							"host": ["{{base_url}}"],
 							"path": ["set-navigation-and-power"]
-						},
-						"description": "Sólo mueve el rotor. No toca las bandas RF.\n\n`request_id` es opcional — borralo del body si no querés tracking."
+						}
 					},
 					"response": []
 				},
@@ -120,8 +119,7 @@
 							"raw": "{{base_url}}/set-navigation-and-power",
 							"host": ["{{base_url}}"],
 							"path": ["set-navigation-and-power"]
-						},
-						"description": "Activa `band_0`. Las demás bandas y los ángulos del rotor quedan sin cambio (semántica patch)."
+						}
 					},
 					"response": []
 				},
@@ -134,7 +132,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"band_0\": false,\n  \"band_1\": false,\n  \"band_2\": false,\n  \"band_3\": false,\n  \"band_4\": false,\n  \"band_5\": false,\n  \"band_6\": false,\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"band_0\": false,\n  \"band_1\": false,\n  \"band_2\": false,\n  \"band_3\": false,\n  \"band_4\": false,\n  \"band_5\": false,\n  \"band_6\": false\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
@@ -205,7 +203,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"azimuth\": 500.0,\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"azimuth\": 500.0\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
@@ -227,7 +225,7 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\n  \"azimuth\": 500.0,\n  \"request_id\": \"abc123\"\n}"
+									"raw": "{\n  \"azimuth\": 500.0\n}"
 								},
 								"url": {
 									"raw": "{{base_url}}/set-navigation-and-power",
@@ -245,56 +243,6 @@
 							"body": "{\n  \"error\": \"azimuth out of range [0,450]\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
-				},
-				{
-					"name": "Error 400 — request_id inválido",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"azimuth\": 90.0,\n  \"request_id\": \"has spaces\"\n}",
-							"options": {
-								"raw": { "language": "json" }
-							}
-						},
-						"url": {
-							"raw": "{{base_url}}/set-navigation-and-power",
-							"host": ["{{base_url}}"],
-							"path": ["set-navigation-and-power"]
-						},
-						"description": "El validador rechaza cualquier `request_id` que no matchee `[A-Za-z0-9_-]{1,36}`. Importante: cuando esto sucede, **el comando no se encola** — el rotor y las bandas no cambian de estado."
-					},
-					"response": [
-						{
-							"name": "400 Bad Request",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{ "key": "Content-Type", "value": "application/json" }
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"azimuth\": 90.0,\n  \"request_id\": \"has spaces\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/set-navigation-and-power",
-									"host": ["{{base_url}}"],
-									"path": ["set-navigation-and-power"]
-								}
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{ "key": "Content-Type", "value": "application/json" }
-							],
-							"cookie": [],
-							"body": "{\n  \"error\": \"invalid request_id\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-						}
-					]
 				}
 			]
 		},
@@ -308,7 +256,7 @@
 					"host": ["{{base_url}}"],
 					"path": ["hard-stop"]
 				},
-				"description": "Parada de emergencia. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_KILL` (key `0xFF`, value `0x01`) — prioridad máxima, cancela cualquier movimiento activo y detiene los motores. No recibe body.\n\nEste endpoint es la versión manual de la parada de emergencia solicitada por el operador. Los watchdogs (`ActivityWatchdog` y `RFOnTimeWatchdog`) y el switch físico de homming **no** disparan este flujo — disparan `POST /homming` en su lugar.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
+				"description": "Parada de emergencia. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_KILL` (key `0xFF`, value `0x01`). No recibe body.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
 			},
 			"response": [
 				{
@@ -343,7 +291,7 @@
 					"host": ["{{base_url}}"],
 					"path": ["homming"]
 				},
-				"description": "Homming. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_HOME` (key `0xFF`, value `0x02`) — prioridad máxima, lleva el rotor a la posición home definida internamente por el firmware del G5500. No recibe body.\n\nEste mismo flujo lo disparan automáticamente:\n- el `ActivityWatchdog` si pierde actividad de control o HTTP,\n- el `RFOnTimeWatchdog` si una banda de RF excede el tiempo máximo encendida,\n- el switch físico conectado al pin `HOMMING_SWITCH_PIN`.\n\nEl endpoint es la versión manual del mismo procedimiento.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
+				"description": "Homming. Apaga las 7 bandas de RF y envía al G5500 el comando `SYSTEM_HOME`. No recibe body.\n\n**Errores:**\n- `503` — Use case no disponible (no inicializado)"
 			},
 			"response": [
 				{
@@ -369,27 +317,27 @@
 			]
 		},
 		{
-			"name": "GET /get-config",
+			"name": "GET /config/network",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{base_url}}/get-config",
+					"raw": "{{base_url}}/config/network",
 					"host": ["{{base_url}}"],
-					"path": ["get-config"]
+					"path": ["config", "network"]
 				},
-				"description": "Retorna **toda** la configuración runtime del dispositivo en una sola respuesta: red (lo que hay en EEPROM + IP/MAC vivos del stack ethernet), timeout del watchdog de RF y los timeouts de los canales del `ActivityWatchdog`.\n\nÚtil como snapshot inicial al levantar una UI o un cliente — equivalente HTTP del comando Serial `{\"cmd\":\"get-config\"}`, pero ampliado con la configuración del resto de subsistemas.\n\n**Campos de respuesta:**\n- `network.mode` (string): `\"static\"` o `\"dhcp\"`\n- `network.ip` / `subnet` / `gateway` (string): config persistida en EEPROM (en modo dhcp = `0.0.0.0`)\n- `network.currentIp` (string): IP realmente asignada al stack ethernet ahora\n- `network.macAddress` (string): MAC del dispositivo\n- `rf_watchdog.timeout_seconds` (int): timeout del watchdog de RF (volátil)\n- `rf_watchdog.active` (boolean): `true` si al menos una banda RF está encendida\n- `activity_watchdog.channels[]`: array con `{name, timeout_ms}` por canal\n\n**Nota:** la configuración de red sólo se modifica por el canal Serial — este endpoint sólo lee.\n\n**Errores:**\n- `500` — buffer interno desbordado (no debería ocurrir con la configuración por defecto)"
+				"description": "Retorna la configuración de red persistida en EEPROM más la IP y MAC activas del stack ethernet.\n\n**Campos de respuesta:**\n- `mode` (string): `\"static\"` o `\"dhcp\"`\n- `ip` / `subnet` / `gateway` (string): config en EEPROM (en modo dhcp = `0.0.0.0`)\n- `currentIp` (string): IP realmente asignada al stack ethernet ahora\n- `macAddress` (string): MAC del dispositivo\n\n**Errores:**\n- `500` — buffer interno desbordado"
 			},
 			"response": [
 				{
-					"name": "200 OK",
+					"name": "200 OK — modo DHCP",
 					"originalRequest": {
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/get-config",
+							"raw": "{{base_url}}/config/network",
 							"host": ["{{base_url}}"],
-							"path": ["get-config"]
+							"path": ["config", "network"]
 						}
 					},
 					"status": "OK",
@@ -399,13 +347,33 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"network\": {\n    \"mode\": \"dhcp\",\n    \"ip\": \"0.0.0.0\",\n    \"subnet\": \"0.0.0.0\",\n    \"gateway\": \"0.0.0.0\",\n    \"currentIp\": \"192.168.1.100\",\n    \"macAddress\": \"DE:AD:BE:EF:FE:ED\"\n  },\n  \"rf_watchdog\": {\n    \"timeout_seconds\": 60,\n    \"active\": false\n  },\n  \"activity_watchdog\": {\n    \"channels\": [\n      { \"name\": \"http\", \"timeout_ms\": 10000 },\n      { \"name\": \"control\", \"timeout_ms\": 60000 }\n    ]\n  },\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+					"body": "{\n  \"mode\": \"dhcp\",\n  \"ip\": \"0.0.0.0\",\n  \"subnet\": \"0.0.0.0\",\n  \"gateway\": \"0.0.0.0\",\n  \"currentIp\": \"192.168.1.100\",\n  \"macAddress\": \"DE:AD:BE:EF:FE:ED\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+				},
+				{
+					"name": "200 OK — modo static",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/config/network",
+							"host": ["{{base_url}}"],
+							"path": ["config", "network"]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{ "key": "Content-Type", "value": "application/json" }
+					],
+					"cookie": [],
+					"body": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.1.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.1.1\",\n  \"currentIp\": \"192.168.1.50\",\n  \"macAddress\": \"DE:AD:BE:EF:FE:ED\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
 		{
-			"name": "POST /set-network-config",
-			"description": "Modifica la configuración de red persistente y **reinicia el dispositivo** automáticamente. Equivalente HTTP del comando Serial `{\"cmd\":\"set-config\",...}`.\n\n⚠️ **Alto riesgo.** Una IP estática mal configurada deja al equipo aislado por red — la única vía de recuperación es el canal Serial USB.\n\nEl reboot es diferido: el handler responde 200 primero, marca un flag, y el reset se dispara desde `loop()` una vez que la conexión TCP se cierra (el cliente recibe un FIN limpio antes del reset).\n\n**Body:**\n- `mode` (string, requerido): `\"static\"` o `\"dhcp\"`\n- `ip`, `subnet`, `gateway` (string, requeridos en modo static): formato `a.b.c.d`\n- `request_id` (string, opcional): `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores 400** (no se escribe EEPROM, no hay reboot): `missing mode`, `invalid mode`, `missing ip/subnet/gateway`, `invalid ip`/`subnet`/`gateway`, `non-contiguous subnet`, `gateway not in subnet`, `invalid request_id`.\n**Error 500**: `eeprom write failed`.",
+			"name": "POST /config/network",
+			"description": "Modifica la configuración de red persistente y **reinicia el dispositivo** automáticamente. Equivalente HTTP del comando Serial `{\"cmd\":\"set-config\",...}`.\n\n⚠️ **Alto riesgo.** Una IP estática mal configurada deja al equipo aislado por red — la única vía de recuperación es el canal Serial USB.\n\nEl reboot es diferido: el handler responde 200 primero, marca un flag, y el reset se dispara desde `loop()` una vez que la conexión TCP se cierra.\n\n**Body:**\n- `mode` (string, requerido): `\"static\"` o `\"dhcp\"`\n- `ip`, `subnet`, `gateway` (string, requeridos en modo static): formato `a.b.c.d`\n- `request_id` (string, opcional): `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores 400** (no se escribe EEPROM, no hay reboot): `missing mode`, `invalid mode`, `missing ip/subnet/gateway`, `invalid ip`/`subnet`/`gateway`, `non-contiguous subnet`, `gateway not in subnet`, `invalid request_id`.\n**Error 500**: `eeprom write failed`.",
 			"item": [
 				{
 					"name": "Set static IP",
@@ -416,17 +384,17 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.5.1\",\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.1.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.1.1\",\n  \"request_id\": \"abc123\"\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-network-config",
+							"raw": "{{base_url}}/config/network",
 							"host": ["{{base_url}}"],
-							"path": ["set-network-config"]
+							"path": ["config", "network"]
 						},
-						"description": "Persiste IP estática en EEPROM y reinicia. `request_id` es opcional — borralo del body si no querés tracking."
+						"description": "Persiste IP estática en EEPROM y reinicia. `request_id` es opcional."
 					},
 					"response": [
 						{
@@ -438,12 +406,12 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.5.1\",\n  \"request_id\": \"abc123\"\n}"
+									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.1.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"192.168.1.1\",\n  \"request_id\": \"abc123\"\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-network-config",
+									"raw": "{{base_url}}/config/network",
 									"host": ["{{base_url}}"],
-									"path": ["set-network-config"]
+									"path": ["config", "network"]
 								}
 							},
 							"status": "OK",
@@ -472,11 +440,11 @@
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-network-config",
+							"raw": "{{base_url}}/config/network",
 							"host": ["{{base_url}}"],
-							"path": ["set-network-config"]
+							"path": ["config", "network"]
 						},
-						"description": "Apaga el flag de EEPROM, vuelve a obtención automática (DHCP). El equipo reinicia. `request_id` es opcional — borralo del body si no querés tracking."
+						"description": "Apaga el flag de EEPROM, vuelve a obtención automática (DHCP). El equipo reinicia."
 					},
 					"response": [
 						{
@@ -491,9 +459,9 @@
 									"raw": "{\n  \"mode\": \"dhcp\",\n  \"request_id\": \"abc123\"\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-network-config",
+									"raw": "{{base_url}}/config/network",
 									"host": ["{{base_url}}"],
-									"path": ["set-network-config"]
+									"path": ["config", "network"]
 								}
 							},
 							"status": "OK",
@@ -516,17 +484,17 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\",\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.1.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\"\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-network-config",
+							"raw": "{{base_url}}/config/network",
 							"host": ["{{base_url}}"],
-							"path": ["set-network-config"]
+							"path": ["config", "network"]
 						},
-						"description": "El gateway `10.0.0.1` no pertenece a la subred `192.168.5.0/24`."
+						"description": "El gateway `10.0.0.1` no pertenece a la subred `192.168.1.0/24`."
 					},
 					"response": [
 						{
@@ -538,12 +506,12 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.5.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\",\n  \"request_id\": \"abc123\"\n}"
+									"raw": "{\n  \"mode\": \"static\",\n  \"ip\": \"192.168.1.50\",\n  \"subnet\": \"255.255.255.0\",\n  \"gateway\": \"10.0.0.1\"\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-network-config",
+									"raw": "{{base_url}}/config/network",
 									"host": ["{{base_url}}"],
-									"path": ["set-network-config"]
+									"path": ["config", "network"]
 								}
 							},
 							"status": "Bad Request",
@@ -560,16 +528,16 @@
 			]
 		},
 		{
-			"name": "GET /rf-watchdog-timeout",
+			"name": "GET /config/watchdog",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{base_url}}/rf-watchdog-timeout",
+					"raw": "{{base_url}}/config/watchdog",
 					"host": ["{{base_url}}"],
-					"path": ["rf-watchdog-timeout"]
+					"path": ["config", "watchdog"]
 				},
-				"description": "Retorna el timeout actual del watchdog de RF (tiempo máximo en segundos que las bandas pueden estar encendidas antes de disparar un `HardStop` automático) y si actualmente hay alguna banda activa.\n\nEl valor inicial al boot es **60 s**. La configuración es **volátil** — vuelve al default después de cada reinicio.\n\n**Campos de respuesta:**\n- `timeout_seconds` (int): timeout actual en segundos\n- `active` (boolean): `true` si al menos una banda RF está encendida\n\n**Errores:**\n- `503` — Watchdog no disponible (no inicializado)"
+				"description": "Retorna el timeout y estado del `RFOnTimeWatchdog` y los timeouts de todos los canales del `ActivityWatchdog` en una sola respuesta.\n\n**Campos de respuesta:**\n- `rf_watchdog.timeout_seconds` (int): timeout del watchdog RF en segundos (volátil)\n- `rf_watchdog.active` (boolean): `true` si al menos una banda RF está encendida\n- `activity_watchdog.channels[]`: array con `{name, timeout_ms}` por canal\n\n**Errores:**\n- `500` — buffer interno desbordado"
 			},
 			"response": [
 				{
@@ -578,9 +546,9 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/rf-watchdog-timeout",
+							"raw": "{{base_url}}/config/watchdog",
 							"host": ["{{base_url}}"],
-							"path": ["rf-watchdog-timeout"]
+							"path": ["config", "watchdog"]
 						}
 					},
 					"status": "OK",
@@ -590,86 +558,16 @@
 						{ "key": "Content-Type", "value": "application/json" }
 					],
 					"cookie": [],
-					"body": "{\n  \"timeout_seconds\": 60,\n  \"active\": false,\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+					"body": "{\n  \"rf_watchdog\": {\n    \"timeout_seconds\": 300,\n    \"active\": false\n  },\n  \"activity_watchdog\": {\n    \"channels\": [\n      { \"name\": \"http\", \"timeout_ms\": 60000 },\n      { \"name\": \"control\", \"timeout_ms\": 60000 }\n    ]\n  },\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 				}
 			]
 		},
 		{
-			"name": "GET /http-watchdog-timeout",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/http-watchdog-timeout",
-					"host": ["{{base_url}}"],
-					"path": ["http-watchdog-timeout"]
-				},
-				"description": "Retorna el timeout actual del canal `http` del `ActivityWatchdog` en segundos.\n\nSi no llega tráfico HTTP en este intervalo **y** el canal `control` también está expirado, se dispara `Homming` automático.\n\nEl valor inicial al boot es **10 s** (`registerChannel(\"http\", 10000)` en `main.cpp`). La configuración es **volátil** — vuelve al default después de cada reinicio.\n\n**Campos de respuesta:**\n- `timeout_seconds` (int): timeout actual del canal `http` en segundos\n\n**Errores:**\n- `503` — Watchdog no disponible (no inicializado)"
-			},
-			"response": [
-				{
-					"name": "200 OK",
-					"originalRequest": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/http-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["http-watchdog-timeout"]
-						}
-					},
-					"status": "OK",
-					"code": 200,
-					"_postman_previewlanguage": "json",
-					"header": [
-						{ "key": "Content-Type", "value": "application/json" }
-					],
-					"cookie": [],
-					"body": "{\n  \"timeout_seconds\": 10,\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-				}
-			]
-		},
-		{
-			"name": "GET /control-watchdog-timeout",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/control-watchdog-timeout",
-					"host": ["{{base_url}}"],
-					"path": ["control-watchdog-timeout"]
-				},
-				"description": "Retorna el timeout actual del canal `control` del `ActivityWatchdog` en segundos.\n\nEste canal se alimenta cuando hay actividad en los switches físicos del rotor / RF. Si no llega actividad en este intervalo **y** el canal `http` también está expirado, se dispara `Homming` automático.\n\nEl valor inicial al boot es **60 s** (`registerChannel(\"control\", 60000)` en `main.cpp`). La configuración es **volátil** — vuelve al default después de cada reinicio.\n\n**Campos de respuesta:**\n- `timeout_seconds` (int): timeout actual del canal `control` en segundos\n\n**Errores:**\n- `503` — Watchdog no disponible (no inicializado)"
-			},
-			"response": [
-				{
-					"name": "200 OK",
-					"originalRequest": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/control-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["control-watchdog-timeout"]
-						}
-					},
-					"status": "OK",
-					"code": 200,
-					"_postman_previewlanguage": "json",
-					"header": [
-						{ "key": "Content-Type", "value": "application/json" }
-					],
-					"cookie": [],
-					"body": "{\n  \"timeout_seconds\": 60,\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-				}
-			]
-		},
-		{
-			"name": "POST /set-rf-watchdog-timeout",
-			"description": "Modifica el timeout del watchdog de RF en caliente. **No reinicia el cronómetro**: si el watchdog ya estaba contando con bandas encendidas, el nuevo valor se compara contra el `_onSinceMs` actual (un timeout más bajo puede disparar inmediatamente el `HardStop`).\n\nCambio **volátil** — no se persiste en EEPROM y vuelve al default (60 s) tras cada reboot.\n\n**Body:**\n- `timeout_seconds` (int, requerido): nuevo timeout en segundos, rango `[1, 3600]`\n- `request_id` (string, opcional): formato `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores:**\n- `400` — falta `timeout_seconds`\n- `400` — `timeout_seconds` fuera de rango `[1, 3600]`\n- `400` — `request_id` con formato inválido\n- `503` — Watchdog no disponible (no inicializado)",
+			"name": "POST /config/watchdog",
+			"description": "Modifica en caliente los timeouts de los watchdogs. Todos los campos son opcionales — omitir un campo deja ese watchdog sin cambios. Los cambios son **volátiles** (vuelven al default tras reboot).\n\n**Body (todos opcionales, rango `1..3600`):**\n- `rf_timeout_seconds` (int): timeout del RF watchdog\n- `http_timeout_seconds` (int): timeout del canal `http` del ActivityWatchdog\n- `control_timeout_seconds` (int): timeout del canal `control` del ActivityWatchdog\n- `request_id` (string, opcional): `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores 400**: `no watchdog field provided`, `*_timeout_seconds out of range (1..3600)`, `invalid request_id`.\n**Errores 503**: watchdog no disponible.",
 			"item": [
 				{
-					"name": "Set timeout (5 min)",
+					"name": "Solo RF watchdog",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -677,17 +575,17 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"timeout_seconds\": 300,\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"rf_timeout_seconds\": 120,\n  \"request_id\": \"abc123\"\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"raw": "{{base_url}}/config/watchdog",
 							"host": ["{{base_url}}"],
-							"path": ["set-rf-watchdog-timeout"]
+							"path": ["config", "watchdog"]
 						},
-						"description": "Sube el timeout a 5 minutos. `request_id` es opcional — borralo del body si no querés tracking."
+						"description": "Sube el timeout del RF watchdog a 2 minutos. Los demás watchdogs quedan sin cambios."
 					},
 					"response": [
 						{
@@ -699,12 +597,12 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\n  \"timeout_seconds\": 300,\n  \"request_id\": \"abc123\"\n}"
+									"raw": "{\n  \"rf_timeout_seconds\": 120,\n  \"request_id\": \"abc123\"\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"raw": "{{base_url}}/config/watchdog",
 									"host": ["{{base_url}}"],
-									"path": ["set-rf-watchdog-timeout"]
+									"path": ["config", "watchdog"]
 								}
 							},
 							"status": "OK",
@@ -714,9 +612,81 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 300,\n  \"request_id\": \"abc123\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+							"body": "{\n  \"status\": \"updated\",\n  \"request_id\": \"abc123\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
+				},
+				{
+					"name": "Solo activity watchdog (http + control)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"http_timeout_seconds\": 30,\n  \"control_timeout_seconds\": 90,\n  \"request_id\": \"abc123\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/config/watchdog",
+							"host": ["{{base_url}}"],
+							"path": ["config", "watchdog"]
+						},
+						"description": "Modifica los canales http y control del ActivityWatchdog. El RF watchdog queda sin cambios."
+					},
+					"response": [
+						{
+							"name": "200 OK",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"http_timeout_seconds\": 30,\n  \"control_timeout_seconds\": 90,\n  \"request_id\": \"abc123\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/config/watchdog",
+									"host": ["{{base_url}}"],
+									"path": ["config", "watchdog"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{ "key": "Content-Type", "value": "application/json" }
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"updated\",\n  \"request_id\": \"abc123\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+						}
+					]
+				},
+				{
+					"name": "Los tres watchdogs",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"rf_timeout_seconds\": 300,\n  \"http_timeout_seconds\": 60,\n  \"control_timeout_seconds\": 60,\n  \"request_id\": \"abc123\"\n}",
+							"options": {
+								"raw": { "language": "json" }
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/config/watchdog",
+							"host": ["{{base_url}}"],
+							"path": ["config", "watchdog"]
+						}
+					},
+					"response": []
 				},
 				{
 					"name": "Error 400 — fuera de rango",
@@ -727,17 +697,17 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"timeout_seconds\": 0,\n  \"request_id\": \"abc123\"\n}",
+							"raw": "{\n  \"rf_timeout_seconds\": 0\n}",
 							"options": {
 								"raw": { "language": "json" }
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"raw": "{{base_url}}/config/watchdog",
 							"host": ["{{base_url}}"],
-							"path": ["set-rf-watchdog-timeout"]
+							"path": ["config", "watchdog"]
 						},
-						"description": "Caso de error esperado: `timeout_seconds` debe estar en `[1, 3600]`."
+						"description": "Caso de error: `rf_timeout_seconds` debe estar en `[1, 3600]`."
 					},
 					"response": [
 						{
@@ -749,12 +719,12 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\n  \"timeout_seconds\": 0,\n  \"request_id\": \"abc123\"\n}"
+									"raw": "{\n  \"rf_timeout_seconds\": 0\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"raw": "{{base_url}}/config/watchdog",
 									"host": ["{{base_url}}"],
-									"path": ["set-rf-watchdog-timeout"]
+									"path": ["config", "watchdog"]
 								}
 							},
 							"status": "Bad Request",
@@ -764,12 +734,12 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"timeout_seconds out of range (1..3600)\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+							"body": "{\n  \"error\": \"rf_timeout_seconds out of range (1..3600)\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				},
 				{
-					"name": "Error 400 — falta timeout_seconds",
+					"name": "Error 400 — sin campos",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -783,11 +753,11 @@
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/set-rf-watchdog-timeout",
+							"raw": "{{base_url}}/config/watchdog",
 							"host": ["{{base_url}}"],
-							"path": ["set-rf-watchdog-timeout"]
+							"path": ["config", "watchdog"]
 						},
-						"description": "El campo `timeout_seconds` es requerido."
+						"description": "Body sin ningún campo de watchdog — debe retornar 400."
 					},
 					"response": [
 						{
@@ -802,9 +772,9 @@
 									"raw": "{\n  \"request_id\": \"abc123\"\n}"
 								},
 								"url": {
-									"raw": "{{base_url}}/set-rf-watchdog-timeout",
+									"raw": "{{base_url}}/config/watchdog",
 									"host": ["{{base_url}}"],
-									"path": ["set-rf-watchdog-timeout"]
+									"path": ["config", "watchdog"]
 								}
 							},
 							"status": "Bad Request",
@@ -814,219 +784,7 @@
 								{ "key": "Content-Type", "value": "application/json" }
 							],
 							"cookie": [],
-							"body": "{\n  \"error\": \"missing timeout_seconds\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-						}
-					]
-				}
-			]
-		},
-		{
-			"name": "POST /set-http-watchdog-timeout",
-			"description": "Modifica el timeout del canal `http` del `ActivityWatchdog` en caliente. Tras actualizar, el canal se alimenta automáticamente (`feed`) para evitar un trip inmediato si el nuevo valor es menor que el tiempo transcurrido desde la última actividad.\n\nCambio **volátil** — no se persiste en EEPROM y vuelve al default (10 s) tras cada reboot.\n\n**Body:**\n- `timeout_seconds` (int, requerido): nuevo timeout en segundos, rango `[1, 3600]`\n- `request_id` (string, opcional): formato `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores:**\n- `400` — falta `timeout_seconds`\n- `400` — `timeout_seconds` fuera de rango `[1, 3600]`\n- `400` — `request_id` con formato inválido\n- `503` — Watchdog no disponible (no inicializado)",
-			"item": [
-				{
-					"name": "Set timeout (30 s)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"timeout_seconds\": 30,\n  \"request_id\": \"abc123\"\n}",
-							"options": {
-								"raw": { "language": "json" }
-							}
-						},
-						"url": {
-							"raw": "{{base_url}}/set-http-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["set-http-watchdog-timeout"]
-						},
-						"description": "Sube el timeout del canal `http` a 30 s. `request_id` es opcional — borralo del body si no querés tracking."
-					},
-					"response": [
-						{
-							"name": "200 OK",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{ "key": "Content-Type", "value": "application/json" }
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"timeout_seconds\": 30,\n  \"request_id\": \"abc123\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/set-http-watchdog-timeout",
-									"host": ["{{base_url}}"],
-									"path": ["set-http-watchdog-timeout"]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{ "key": "Content-Type", "value": "application/json" }
-							],
-							"cookie": [],
-							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 30,\n  \"request_id\": \"abc123\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-						}
-					]
-				},
-				{
-					"name": "Error 400 — fuera de rango",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"timeout_seconds\": 5000,\n  \"request_id\": \"abc123\"\n}",
-							"options": {
-								"raw": { "language": "json" }
-							}
-						},
-						"url": {
-							"raw": "{{base_url}}/set-http-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["set-http-watchdog-timeout"]
-						},
-						"description": "Caso de error esperado: `timeout_seconds` debe estar en `[1, 3600]`."
-					},
-					"response": [
-						{
-							"name": "400 Bad Request",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{ "key": "Content-Type", "value": "application/json" }
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"timeout_seconds\": 5000,\n  \"request_id\": \"abc123\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/set-http-watchdog-timeout",
-									"host": ["{{base_url}}"],
-									"path": ["set-http-watchdog-timeout"]
-								}
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{ "key": "Content-Type", "value": "application/json" }
-							],
-							"cookie": [],
-							"body": "{\n  \"error\": \"timeout_seconds out of range (1..3600)\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-						}
-					]
-				}
-			]
-		},
-		{
-			"name": "POST /set-control-watchdog-timeout",
-			"description": "Misma semántica que `POST /set-http-watchdog-timeout` pero aplica al canal `control` del `ActivityWatchdog` (actividad de los switches físicos del rotor / RF).\n\nCambio **volátil** — no se persiste en EEPROM y vuelve al default (60 s) tras cada reboot.\n\n**Body:**\n- `timeout_seconds` (int, requerido): nuevo timeout en segundos, rango `[1, 3600]`\n- `request_id` (string, opcional): formato `[A-Za-z0-9_-]{1,36}`, echo-devuelto en la respuesta\n\n**Errores:**\n- `400` — falta `timeout_seconds`\n- `400` — `timeout_seconds` fuera de rango `[1, 3600]`\n- `400` — `request_id` con formato inválido\n- `503` — Watchdog no disponible (no inicializado)",
-			"item": [
-				{
-					"name": "Set timeout (2 min)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"timeout_seconds\": 120,\n  \"request_id\": \"abc123\"\n}",
-							"options": {
-								"raw": { "language": "json" }
-							}
-						},
-						"url": {
-							"raw": "{{base_url}}/set-control-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["set-control-watchdog-timeout"]
-						},
-						"description": "Sube el timeout del canal `control` a 120 s. `request_id` es opcional — borralo del body si no querés tracking."
-					},
-					"response": [
-						{
-							"name": "200 OK",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{ "key": "Content-Type", "value": "application/json" }
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"timeout_seconds\": 120,\n  \"request_id\": \"abc123\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/set-control-watchdog-timeout",
-									"host": ["{{base_url}}"],
-									"path": ["set-control-watchdog-timeout"]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{ "key": "Content-Type", "value": "application/json" }
-							],
-							"cookie": [],
-							"body": "{\n  \"status\": \"updated\",\n  \"timeout_seconds\": 120,\n  \"request_id\": \"abc123\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
-						}
-					]
-				},
-				{
-					"name": "Error 400 — falta timeout_seconds",
-					"request": {
-						"method": "POST",
-						"header": [
-							{ "key": "Content-Type", "value": "application/json" }
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"request_id\": \"abc123\"\n}",
-							"options": {
-								"raw": { "language": "json" }
-							}
-						},
-						"url": {
-							"raw": "{{base_url}}/set-control-watchdog-timeout",
-							"host": ["{{base_url}}"],
-							"path": ["set-control-watchdog-timeout"]
-						},
-						"description": "El campo `timeout_seconds` es requerido."
-					},
-					"response": [
-						{
-							"name": "400 Bad Request",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{ "key": "Content-Type", "value": "application/json" }
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"request_id\": \"abc123\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/set-control-watchdog-timeout",
-									"host": ["{{base_url}}"],
-									"path": ["set-control-watchdog-timeout"]
-								}
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{ "key": "Content-Type", "value": "application/json" }
-							],
-							"cookie": [],
-							"body": "{\n  \"error\": \"missing timeout_seconds\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
+							"body": "{\n  \"error\": \"no watchdog field provided\",\n  \"timestamp\": \"2026-02-24T15:30:00Z\",\n  \"time_valid\": true\n}"
 						}
 					]
 				}

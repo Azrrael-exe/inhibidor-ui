@@ -15,11 +15,11 @@ size_t buildStatusJson(char* out, size_t outLen,
     const GpsData&     g = gps->getData();
     const CompassData& c = compass->getData();
 
-    char lat[14], lon[14], alt[10], hdg[8];
+    char lat[10], lon[10], alt[10], hdg[8];
     char dt[22];  // "YYYY-MM-DDTHH:MM:SSZ\0"
 
-    dtostrf(g.latitude,  1, 6, lat);
-    dtostrf(g.longitude, 1, 6, lon);
+    dtostrf(g.latitude,  1, 2, lat);
+    dtostrf(g.longitude, 1, 2, lon);
     dtostrf(g.altitude,  1, 1, alt);
     dtostrf(c.heading,   1, 1, hdg);
 

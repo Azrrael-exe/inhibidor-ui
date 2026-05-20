@@ -13,10 +13,8 @@
 #include "handlers/NavigationHandler.h"
 #include "handlers/HardStopHandler.h"
 #include "handlers/HommingHandler.h"
-#include "handlers/RFWatchdogHandler.h"
-#include "handlers/ActivityWatchdogHandler.h"
-#include "handlers/ConfigHandler.h"
 #include "handlers/NetworkConfigHandler.h"
+#include "handlers/WatchdogConfigHandler.h"
 #include "handlers/timestamp.h"
 #include "modules/GpsModule.h"
 #include "modules/CompassModule.h"
@@ -60,7 +58,7 @@ DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
 DigitalSwitch elevationForwardSwitch(ELEVATION_FORWARD_PIN);
 DigitalSwitch elevationBackwardSwitch(ELEVATION_BACKWARD_PIN);
-DigitalSwitch rfPowerSwitch(RF_POWER_PIN);
+DigitalSwitch rfPowerSwitch(RF_POWER_PIN, 50);
 DigitalSwitch hommingSwitch(HOMMING_SWITCH_PIN);
 
 G5500CommandContext azimuthForwardContext   = { &Serial2, AZIMUTH_HEADER,   AZIMUTH_FORWARD,   &rotorService };
@@ -70,19 +68,25 @@ G5500CommandContext elevationForwardContext  = { &Serial2, ELEVATION_HEADER, ELE
 G5500CommandContext elevationBackwardContext = { &Serial2, ELEVATION_HEADER, ELEVATION_BACKWARD, &rotorService };
 G5500CommandContext elevationStopContext     = { &Serial2, ELEVATION_HEADER, ELEVATION_STOP,     &rotorService };
 
+
 void activateRFPower(void* context) {
+    if (digitalRead(RF_POWER_PIN) != HIGH) return;
+    // LOG("RFPower", "Activating RF power via physical switch");
     int8_t bands[7] = { 1, 1, 1, 1, 1, 1, 1 };
     char err[48];
     setNavAndPowerUseCase.execute(false, 0.0f, false, 0.0f, bands, err, sizeof(err));
 }
 
 void deactivateRFPower(void* context) {
+    if (digitalRead(RF_POWER_PIN) != LOW) return;
+    // LOG("RFPower", "Deactivating RF power via physical switch");
     int8_t bands[7] = { 0, 0, 0, 0, 0, 0, 0 };
     char err[48];
     setNavAndPowerUseCase.execute(false, 0.0f, false, 0.0f, bands, err, sizeof(err));
 }
 
 void triggerHomming(void* context) {
+    // LOG("Homming", "Triggering homming via physical switch or watchdog timeout");
     hommingUseCase.execute();
 }
 
@@ -127,7 +131,7 @@ void setup() {
 
     compassModule.begin();
 
-    httpChannelId    = activityWatchdog.registerChannel("http",    10000UL);
+    httpChannelId    = activityWatchdog.registerChannel("http",    60000UL);
     controlChannelId = activityWatchdog.registerChannel("control", 60000UL);
 
     setNavAndPowerUseCase.setRFOnTimeWatchdog(&rfOnTimeWatchdog);
@@ -139,25 +143,23 @@ void setup() {
                           &activityWatchdog, httpChannelId);
     initHardStopHandler(&hardStopUseCase, &activityWatchdog, httpChannelId);
     initHommingHandler(&hommingUseCase, &activityWatchdog, httpChannelId);
-    initRFWatchdogHandler(&rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
-    initActivityWatchdogHandler(&activityWatchdog, httpChannelId, controlChannelId);
-    initConfigHandler(mac, &rfOnTimeWatchdog, &activityWatchdog, httpChannelId);
-    initNetworkConfigHandler(&activityWatchdog, httpChannelId);
+    initNetworkConfigHandler(mac, &activityWatchdog, httpChannelId);
+    initWatchdogConfigHandler(&rfOnTimeWatchdog, &activityWatchdog, httpChannelId, controlChannelId);
     initTimestampService(&gpsModule);
 
     webServer.begin();
-    webServer.on("/status",                   HTTP_GET,  handleGetStatus);
-    webServer.on("/set-navigation-and-power", HTTP_POST, handleSetNavigationAndPower);
-    webServer.on("/hard-stop",                HTTP_POST, handleHardStop);
-    webServer.on("/homming",                  HTTP_POST, handleHomming);
-    webServer.on("/rf-watchdog-timeout",      HTTP_GET,  handleGetRFWatchdogTimeout);
-    webServer.on("/set-rf-watchdog-timeout",  HTTP_POST, handleSetRFWatchdogTimeout);
-    webServer.on("/http-watchdog-timeout",     HTTP_GET,  handleGetHttpWatchdogTimeout);
-    webServer.on("/set-http-watchdog-timeout", HTTP_POST, handleSetHttpWatchdogTimeout);
-    webServer.on("/control-watchdog-timeout",  HTTP_GET,  handleGetControlWatchdogTimeout);
-    webServer.on("/set-control-watchdog-timeout", HTTP_POST, handleSetControlWatchdogTimeout);
-    webServer.on("/get-config",               HTTP_GET,  handleGetConfig);
-    webServer.on("/set-network-config",       HTTP_POST, handleSetNetworkConfig);
+    bool routesOk = true;
+    routesOk &= webServer.on("/status",                      HTTP_GET,  handleGetStatus);
+    routesOk &= webServer.on("/set-navigation-and-power",    HTTP_POST, handleSetNavigationAndPower);
+    routesOk &= webServer.on("/hard-stop",                   HTTP_POST, handleHardStop);
+    routesOk &= webServer.on("/homming",                     HTTP_POST, handleHomming);
+    routesOk &= webServer.on("/config/network",  HTTP_GET,  handleGetNetworkConfig);
+    routesOk &= webServer.on("/config/network",  HTTP_POST, handleSetNetworkConfig);
+    routesOk &= webServer.on("/config/watchdog", HTTP_GET,  handleGetWatchdogConfig);
+    routesOk &= webServer.on("/config/watchdog", HTTP_POST, handleSetWatchdogConfig);
+    if (!routesOk) {
+        Serial.println(F("[WebServer] ERROR: route table full — increase WS_MAX_ROUTES"));
+    }
 
     pinMode(RF_BAND_0, OUTPUT);
     pinMode(RF_BAND_1, OUTPUT);
@@ -195,8 +197,8 @@ void setup() {
     elevationBackwardSwitch.setOnTurnOff(sendG5500Command, &elevationStopContext);
 
     // RF switch logic is inverted (connected to GND): LOW=pressed=activate, HIGH=released=deactivate
-    rfPowerSwitch.setOnTurnOn(deactivateRFPower);   // HIGH (released)
-    rfPowerSwitch.setOnTurnOff(activateRFPower);    // LOW (pressed)
+    rfPowerSwitch.setOnTurnOn(activateRFPower);   // HIGH (released)
+    rfPowerSwitch.setOnTurnOff(deactivateRFPower);    // LOW (pressed)
 
     hommingSwitch.setOnTurnOn(triggerHomming);      // HIGH (pressed) → Homming
 
@@ -208,9 +210,15 @@ void setup() {
     // Grace period: avoid a spurious trip before the first activity arrives.
     activityWatchdog.feed(httpChannelId);
     activityWatchdog.feed(controlChannelId);
+
+    // Hardware WDT: reset if loop() ever blocks for > 8 seconds.
+    // Kicked at the top of every loop() iteration via wdt_reset().
+    wdt_enable(WDTO_8S);
 }
 
 void loop() {
+    wdt_reset();
+
     webServer.update();
     serialConfig.update();
 
@@ -239,6 +247,8 @@ void loop() {
                       || elevationBackwardSwitch.getState()
                       || !rfPowerSwitch.getState();   // RF switch is active-LOW
     if (controlActive) activityWatchdog.feed(controlChannelId);
+
+    Ethernet.maintain();
 
     rfOnTimeWatchdog.update();
     activityWatchdog.update();

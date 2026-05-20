@@ -7,7 +7,7 @@
 // ─── Buffer size constants ────────────────────────────────────────────────────
 
 /** Maximum number of registered routes. Each route costs ~6 bytes of SRAM. */
-#define WS_MAX_ROUTES       10
+#define WS_MAX_ROUTES       16
 
 /** Maximum URL path length including null terminator. */
 #define WS_PATH_LEN         64
@@ -15,15 +15,17 @@
 /**
  * Maximum length for request params / body including null terminator.
  * Used for GET query strings and POST JSON bodies.
+ * Worst-case POST body: set-navigation-and-power with all 7 bands=false + 36-char request_id = 191 chars.
+ * 220 leaves 28 chars of margin for optional whitespace or future fields.
  */
-#define WS_PARAMS_LEN       256
+#define WS_PARAMS_LEN       220
 
 /**
  * Line buffer for parsing request line and headers one line at a time.
- * Must fit the request line: "POST /path?query HTTP/1.1" (typically < 220 bytes).
+ * Must fit the longest request line: "GET /config/watchdog?request_id=<36> HTTP/1.1" ≈ 79 bytes.
  * Headers that exceed this are silently skipped (we only need Content-Length).
  */
-#define WS_LINE_BUF_LEN     256
+#define WS_LINE_BUF_LEN     96
 
 /**
  * Maximum time (in milliseconds) to wait for an inactive client
@@ -50,7 +52,7 @@ enum HttpMethod : uint8_t {
  *                    e.g. '{"band":3}'
  *
  * Stack-allocated inside WebServer::update() during dispatch.
- * Memory: 1 + 64 + 256 = 321 bytes.
+ * Memory: 1 + 64 + 220 = 285 bytes.
  */
 struct HttpRequest {
     HttpMethod method;
@@ -155,8 +157,8 @@ enum ParseState : uint8_t {
  *
  * All responses are JSON (Content-Type: application/json).
  *
- * Static SRAM footprint: ~466 bytes.
- * Peak stack during dispatch: ~324 bytes (HttpRequest + HttpResponse).
+ * Static SRAM footprint: ~398 bytes.
+ * Peak stack during dispatch: ~288 bytes (HttpRequest + HttpResponse).
  *
  * Usage:
  *   WebServer server(80);

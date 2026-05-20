@@ -22,7 +22,7 @@ public:
     void update();
 
 private:
-    static constexpr uint8_t LINE_BUF_LEN = 200;
+    static constexpr uint8_t LINE_BUF_LEN = 128;
 
     Stream*  _serial;
     char     _lineBuf[LINE_BUF_LEN];
