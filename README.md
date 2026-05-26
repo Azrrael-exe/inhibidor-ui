@@ -666,8 +666,30 @@ Resumen de los valores con los que el firmware levanta al boot. Se distinguen tr
 | Modo cold boot | `static 192.168.1.100` | Hardcoded | Si la EEPROM está virgen o con CRC inválido, el firmware **no** intenta DHCP: levanta directo en `192.168.1.100` con subnet `255.255.255.0` y gateway `192.168.1.1` (defaults de la librería Ethernet). Garantiza una IP conocida en arranques de fábrica. |
 | Modo runtime | `static` o `dhcp` (según EEPROM) | EEPROM | Tras la primera escritura via `set-config` (Serial) o `POST /set-network-config`, el boot sigue lo guardado en EEPROM. Si el usuario eligió `dhcp` explícitamente, el firmware sí intenta DHCP y cae a `192.168.1.100` como fallback. |
 | IP fallback DHCP | `192.168.1.100` | Hardcoded | Cuando la EEPROM dice `dhcp` y `Ethernet.begin(mac)` falla (sin servidor DHCP en la red). |
-| MAC | `DE:AD:BE:EF:FE:ED` | Hardcoded | Definida en `main.cpp`. |
+| MAC | `DE:AD:BE:EF:FE:ED` | Hardcoded | Definida en `src/main.cpp:31`. Ver [Cambiar la MAC del dispositivo](#cambiar-la-mac-del-dispositivo). |
 | Puerto HTTP | `80` | Hardcoded | `WebServer webServer(80)`. |
+
+#### Cambiar la MAC del dispositivo
+
+La MAC es un valor **hardcoded**: a diferencia de la IP, no se configura por Serial ni HTTP. Es una decisión deliberada — el ATmega2560 está al ~88.6% de su SRAM (8 KB) y hacerla configurable en runtime consumiría memoria estática (literales de string + buffers de parseo) que el equipo no tiene de sobra. Para cambiarla se edita el firmware y se reprograma el microcontrolador.
+
+1. Editá el arreglo `mac[]` en `src/main.cpp:31`, reemplazando los 6 bytes hex:
+
+```cpp
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+```
+
+2. Recompilá y subí el firmware al CONTROLLINO:
+
+```bash
+pio run -t upload
+```
+
+3. La nueva MAC toma efecto al boot. Verificala con `GET /config/network` o el comando Serial `get-config` (campo `macAddress`).
+
+> ⚠️ **Unicidad**: si hay más de un equipo en la misma LAN, cada uno necesita una MAC **única**, o habrá conflictos ARP (los dispositivos se roban el tráfico entre sí).
+>
+> 💡 **Rango locally-administered**: para redes privadas conviene una MAC del rango administrado localmente — el segundo bit menos significativo del primer byte en `1` (es decir, primer byte par: `0x02`, `0x06`, `0xDE`, etc.). Así no colisiona con MACs asignadas por fabricantes. El default `0xDE` ya cumple.
 
 ### Serial
 
