@@ -28,7 +28,7 @@
 #include "use_cases/HommingUseCase.h"
 
 // ─── Network configuration ────────────────────────────────────────────────────
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xAA, 0xED };
 IPAddress fallbackIp(192, 168, 1, 100);
 
 WebServer webServer(80);
@@ -49,10 +49,16 @@ ActivityWatchdog activityWatchdog(onWatchdogTimeout, &hommingUseCase);
 int httpChannelId    = -1;
 int controlChannelId = -1;
 
+// RF on-time exceeded: turn off all RF bands only. Unlike the activity watchdog
+// and the homming switch, this does NOT move the rotor home — it just kills RF.
 static void onRFOnTimeExpired(void* ctx) {
-    static_cast<HommingUseCase*>(ctx)->execute();
+    const uint8_t bandPins[7] = {
+        RF_BAND_0, RF_BAND_1, RF_BAND_2, RF_BAND_3, RF_BAND_4, RF_BAND_5, RF_BAND_6
+    };
+    for (uint8_t i = 0; i < 7; i++) digitalWrite(bandPins[i], LOW);
+    static_cast<RFOnTimeWatchdog*>(ctx)->allOff();
 }
-RFOnTimeWatchdog rfOnTimeWatchdog(onRFOnTimeExpired, &hommingUseCase, 5UL * 60UL * 1000UL);
+RFOnTimeWatchdog rfOnTimeWatchdog(onRFOnTimeExpired, &rfOnTimeWatchdog, 5UL * 60UL * 1000UL);
 
 DigitalSwitch azimuthForwardSwitch(AZIMUTH_FORWARD_PIN);
 DigitalSwitch azimuthBackwardSwitch(AZIMUTH_BACKWARD_PIN);
@@ -222,7 +228,7 @@ void loop() {
     webServer.update();
     serialConfig.update();
 
-    // Deferred reboot after successful POST /set-network-config — runs only after
+    // Deferred reboot after successful POST /config/network — runs only after
     // WebServer::update() has dispatched the response and called _client.stop(),
     // so the client gets a clean FIN before the watchdog reset fires.
     if (isNetworkConfigRebootPending()) {

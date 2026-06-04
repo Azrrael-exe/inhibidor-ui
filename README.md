@@ -255,14 +255,15 @@ curl -X POST http://<ip>/hard-stop
 
 Homming. **Apaga las 7 bandas de RF** y **envía al G5500 el comando `SYSTEM_HOME`** (key `0xFF`, value `0x02`) — prioridad máxima en el firmware del rotor: lleva el rotor a la posición home definida internamente por el G5500. No recibe body.
 
-Este mismo flujo se dispara por cuatro vías:
+Este mismo flujo se dispara por tres vías:
 
 | Fuente | Descripción |
 |--------|-------------|
 | `POST /homming` | Versión manual vía HTTP (este endpoint). |
 | Botón físico (`HOMMING_SWITCH_PIN` / A0) | Al presionar el botón conectado al pin A0, el firmware detecta el flanco ascendente (activo-HIGH, debounce 50 ms) y ejecuta el Homming de forma inmediata e independiente del estado de la red. |
-| `ActivityWatchdog` | Disparo automático si no llega actividad HTTP en 10 s o actividad de control en 60 s. |
-| `RFOnTimeWatchdog` | Disparo automático si una banda RF excede el tiempo máximo encendida (default 60 s, configurable). |
+| `ActivityWatchdog` | Disparo automático si no llega actividad HTTP en 60 s o actividad de control en 60 s. |
+
+> **Nota:** el `RFOnTimeWatchdog` **no** dispara Homming. Cuando una banda RF excede su tiempo máximo encendida, solo **apaga las 7 bandas de RF** — el rotor no se mueve.
 
 **Request:**
 
@@ -301,7 +302,7 @@ Retorna la configuración de red persistida en EEPROM más la IP y MAC activas d
   "subnet": "0.0.0.0",
   "gateway": "0.0.0.0",
   "currentIp": "192.168.1.100",
-  "macAddress": "DE:AD:BE:EF:FE:ED",
+  "macAddress": "DE:AD:BE:EF:AA:ED",
   "timestamp": "2026-02-24T15:30:00Z",
   "time_valid": true
 }
@@ -420,7 +421,7 @@ Retorna el timeout y estado del `RFOnTimeWatchdog` y los timeouts de todos los c
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `rf_watchdog.timeout_seconds` | int | Tiempo máximo que puede estar encendida alguna banda RF antes de disparar Homming (volátil) |
+| `rf_watchdog.timeout_seconds` | int | Tiempo máximo que puede estar encendida alguna banda RF antes de apagar todas las bandas RF (volátil) |
 | `rf_watchdog.active` | boolean | `true` si al menos una banda RF está encendida ahora |
 | `activity_watchdog.channels[].name` | string | Nombre del canal (`http`, `control`, etc.) |
 | `activity_watchdog.channels[].timeout_ms` | int | Timeout del canal en milisegundos (volátil) |
@@ -446,7 +447,7 @@ Modifica en caliente los timeouts de los watchdogs. Todos los campos son opciona
 Los cambios son **volátiles**: no se persisten en EEPROM y vuelven al valor por defecto tras cada reboot.
 
 **Comportamiento por campo:**
-- `rf_timeout_seconds`: actualiza `RFOnTimeWatchdog`. **No reinicia el cronómetro** — un valor más bajo puede disparar `Homming` inmediatamente si hay bandas encendidas.
+- `rf_timeout_seconds`: actualiza `RFOnTimeWatchdog`. **No reinicia el cronómetro** — un valor más bajo puede apagar las bandas RF inmediatamente si hay bandas encendidas.
 - `http_timeout_seconds` / `control_timeout_seconds`: actualizan el canal correspondiente del `ActivityWatchdog` y lo alimentan automáticamente (`feed`) para evitar un trip inmediato.
 
 **Request body** (todos los campos opcionales, rango `1..3600`):
@@ -541,7 +542,7 @@ Al boot el sistema emite un banner:
 **Response:**
 
 ```json
-{"mode":"static","ip":"192.168.5.50","subnet":"255.255.255.0","gateway":"192.168.5.1","currentIp":"192.168.5.50","macAddress":"DE:AD:BE:EF:FE:ED"}
+{"mode":"static","ip":"192.168.5.50","subnet":"255.255.255.0","gateway":"192.168.5.1","currentIp":"192.168.5.50","macAddress":"DE:AD:BE:EF:AA:ED"}
 ```
 
 | Campo | Descripción |
@@ -664,9 +665,9 @@ Resumen de los valores con los que el firmware levanta al boot. Se distinguen tr
 | Parámetro | Default | Tipo | Notas |
 |-----------|---------|------|-------|
 | Modo cold boot | `static 192.168.1.100` | Hardcoded | Si la EEPROM está virgen o con CRC inválido, el firmware **no** intenta DHCP: levanta directo en `192.168.1.100` con subnet `255.255.255.0` y gateway `192.168.1.1` (defaults de la librería Ethernet). Garantiza una IP conocida en arranques de fábrica. |
-| Modo runtime | `static` o `dhcp` (según EEPROM) | EEPROM | Tras la primera escritura via `set-config` (Serial) o `POST /set-network-config`, el boot sigue lo guardado en EEPROM. Si el usuario eligió `dhcp` explícitamente, el firmware sí intenta DHCP y cae a `192.168.1.100` como fallback. |
+| Modo runtime | `static` o `dhcp` (según EEPROM) | EEPROM | Tras la primera escritura via `set-config` (Serial) o `POST /config/network`, el boot sigue lo guardado en EEPROM. Si el usuario eligió `dhcp` explícitamente, el firmware sí intenta DHCP y cae a `192.168.1.100` como fallback. |
 | IP fallback DHCP | `192.168.1.100` | Hardcoded | Cuando la EEPROM dice `dhcp` y `Ethernet.begin(mac)` falla (sin servidor DHCP en la red). |
-| MAC | `DE:AD:BE:EF:FE:ED` | Hardcoded | Definida en `src/main.cpp:31`. Ver [Cambiar la MAC del dispositivo](#cambiar-la-mac-del-dispositivo). |
+| MAC | `DE:AD:BE:EF:AA:ED` | Hardcoded | Definida en `src/main.cpp:31`. Ver [Cambiar la MAC del dispositivo](#cambiar-la-mac-del-dispositivo). |
 | Puerto HTTP | `80` | Hardcoded | `WebServer webServer(80)`. |
 
 #### Cambiar la MAC del dispositivo
@@ -676,7 +677,7 @@ La MAC es un valor **hardcoded**: a diferencia de la IP, no se configura por Ser
 1. Editá el arreglo `mac[]` en `src/main.cpp:31`, reemplazando los 6 bytes hex:
 
 ```cpp
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xAA, 0xED };
 ```
 
 2. Recompilá y subí el firmware al CONTROLLINO:
@@ -707,7 +708,7 @@ pio run -t upload
 | `ActivityWatchdog` canal `http` | `60 000 ms` | Volátil | `POST /config/watchdog` con `http_timeout_seconds` (rango `1..3600` s). Vuelve al default tras reboot. |
 | `ActivityWatchdog` canal `control` | `60 000 ms` | Volátil | `POST /config/watchdog` con `control_timeout_seconds` (rango `1..3600` s). Vuelve al default tras reboot. |
 
-Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `RFOnTimeWatchdog` también dispara `HommingUseCase` cuando alguna banda RF supera el tiempo máximo encendida.
+Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `RFOnTimeWatchdog`, en cambio, **solo apaga las bandas RF** (no dispara Homming, el rotor no se mueve) cuando alguna banda RF supera el tiempo máximo encendida.
 
 ### Rotor (G5500)
 
@@ -744,7 +745,7 @@ Ambos canales del `ActivityWatchdog` disparan `HommingUseCase` en timeout. El `R
 | CONTROLLINO MAXI | — | MCU principal (ATmega2560) |
 | BE-880Q | Serial1 @ 38400 | Receptor GPS, protocolo NMEA |
 | QMC5883L | I2C (0x0D) | Compás magnético |
-| G5500 | Serial @ 115200 | Controlador de rotor (azimuth/elevación) |
+| G5500 | Serial2 @ 115200 | Controlador de rotor (azimuth/elevación) |
 | W5100 | SPI | Módulo Ethernet |
 | Botón Homming | A0 (`HOMMING_SWITCH_PIN`) | Entrada digital activo-HIGH. Al presionarlo dispara Homming inmediato (apaga RF + envía `SYSTEM_HOME` al rotor). |
 
