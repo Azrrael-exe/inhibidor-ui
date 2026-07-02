@@ -16,6 +16,7 @@ void HttpResponse::json(uint16_t statusCode, const char* body) {
 
 void HttpResponse::notFound()         { _sendError(404, "Not Found"); }
 void HttpResponse::methodNotAllowed() { _sendError(405, "Method Not Allowed"); }
+void HttpResponse::requestTimeout()   { _sendError(408, "Request Timeout"); }
 
 void HttpResponse::badRequest(const char* msg)  { _sendError(400, msg); }
 void HttpResponse::serverError(const char* msg) { _sendError(500, msg); }
@@ -59,6 +60,7 @@ const char* HttpResponse::_phrase(uint16_t code) {
         case 400: return "Bad Request";
         case 404: return "Not Found";
         case 405: return "Method Not Allowed";
+        case 408: return "Request Timeout";
         case 500: return "Internal Server Error";
         default:  return "Unknown";
     }
@@ -110,9 +112,13 @@ void WebServer::update() {
         }
     }
 
-    // Check for inactive client timeout
+    // Check for inactive client timeout. Send a real HTTP response before
+    // closing: a silent close reads as "empty reply" and proxies report it
+    // as 502, hiding the actual cause.
     if (_parseState != PS_IDLE) {
         if (millis() - _lastActivityMs > WS_CLIENT_TIMEOUT_MS) {
+            HttpResponse res(&_client);
+            res.requestTimeout();
             _client.stop();
             _resetParser();
         }

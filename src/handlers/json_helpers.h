@@ -9,8 +9,12 @@
  *
  * Example: jsonGetInt("{\"foo\":1,\"bar\":0}", "foo", -1) → 1
  */
+// Longest key in the firmware is "control_timeout_seconds" (23 chars);
+// 32 fits `"<key>"` + NUL. Keep small: these live on the deepest stack path.
+#define JSON_KEY_PATTERN_LEN 32
+
 inline int jsonGetInt(const char* json, const char* key, int defaultVal) {
-    char pattern[WS_PARAMS_LEN / 2];
+    char pattern[JSON_KEY_PATTERN_LEN];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
 
     const char* p = strstr(json, pattern);
@@ -32,7 +36,7 @@ inline int jsonGetInt(const char* json, const char* key, int defaultVal) {
  * Example: jsonGetBool("{\"active\":true}", "active", -1) → 1
  */
 inline int jsonGetBool(const char* json, const char* key, int defaultVal) {
-    char pattern[WS_PARAMS_LEN / 2];
+    char pattern[JSON_KEY_PATTERN_LEN];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
 
     const char* p = strstr(json, pattern);
@@ -57,7 +61,7 @@ inline int jsonGetBool(const char* json, const char* key, int defaultVal) {
  * Example: jsonGetFloat("{\"az\":180.5}", "az", 0.0f) → 180.5
  */
 inline float jsonGetFloat(const char* json, const char* key, float defaultVal) {
-    char pattern[WS_PARAMS_LEN / 2];
+    char pattern[JSON_KEY_PATTERN_LEN];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
 
     const char* p = strstr(json, pattern);
@@ -78,7 +82,7 @@ inline float jsonGetFloat(const char* json, const char* key, float defaultVal) {
  * Example: jsonHasKey("{\"az\":180.5}", "az") → true
  */
 inline bool jsonHasKey(const char* json, const char* key) {
-    char pattern[WS_PARAMS_LEN / 2];
+    char pattern[JSON_KEY_PATTERN_LEN];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
     return strstr(json, pattern) != nullptr;
 }
@@ -94,7 +98,7 @@ inline bool jsonGetString(const char* json, const char* key, char* out, size_t o
     if (!out || outLen == 0) return false;
     out[0] = '\0';
 
-    char pattern[WS_PARAMS_LEN / 2];
+    char pattern[JSON_KEY_PATTERN_LEN];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
 
     const char* p = strstr(json, pattern);

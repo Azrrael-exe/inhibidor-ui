@@ -95,6 +95,9 @@ public:
     /** 405 {"error":"Method Not Allowed"} */
     void methodNotAllowed();
 
+    /** 408 {"error":"Request Timeout"} — sent when a client stalls mid-request. */
+    void requestTimeout();
+
     /** Returns true if a response has already been sent. */
     bool sent() const;
 
