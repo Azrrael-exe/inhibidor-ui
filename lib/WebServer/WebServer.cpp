@@ -14,12 +14,15 @@ void HttpResponse::json(uint16_t statusCode, const char* body) {
     _send(statusCode, body);
 }
 
-void HttpResponse::notFound()         { _sendError(404, "Not Found"); }
-void HttpResponse::methodNotAllowed() { _sendError(405, "Method Not Allowed"); }
-void HttpResponse::requestTimeout()   { _sendError(408, "Request Timeout"); }
+void HttpResponse::notFound()         { _sendError(404, F("Not Found")); }
+void HttpResponse::methodNotAllowed() { _sendError(405, F("Method Not Allowed")); }
+void HttpResponse::requestTimeout()   { _sendError(408, F("Request Timeout")); }
 
-void HttpResponse::badRequest(const char* msg)  { _sendError(400, msg); }
-void HttpResponse::serverError(const char* msg) { _sendError(500, msg); }
+void HttpResponse::badRequest()       { _sendError(400, F("Bad Request")); }
+void HttpResponse::serverError()      { _sendError(500, F("Internal Server Error")); }
+
+void HttpResponse::badRequest(const __FlashStringHelper* msg)  { _sendError(400, msg); }
+void HttpResponse::serverError(const __FlashStringHelper* msg) { _sendError(500, msg); }
 
 void HttpResponse::_send(uint16_t code, const char* body) {
     if (_sent || !_client) return;
@@ -40,29 +43,28 @@ void HttpResponse::_send(uint16_t code, const char* body) {
     }
 }
 
-void HttpResponse::_sendError(uint16_t code, const char* msg) {
+void HttpResponse::_sendError(uint16_t code, const __FlashStringHelper* msg) {
     if (_sent) return;
     // Build: {"error":"<msg>"}  (max msg 128 chars to fit 160-byte stack buffer)
     char buf[160];
-    buf[0] = '\0';
-    strncat(buf, "{\"error\":\"", sizeof(buf) - 1);
+    strcpy_P(buf, PSTR("{\"error\":\""));
     uint8_t room = (uint8_t)(sizeof(buf) - strlen(buf) - 3); // reserve `"}\0`
-    strncat(buf, msg, room);
-    strncat(buf, "\"}", sizeof(buf) - strlen(buf) - 1);
+    strncat_P(buf, reinterpret_cast<PGM_P>(msg), room);
+    strcat_P(buf, PSTR("\"}"));
     _send(code, buf);
 }
 
-const char* HttpResponse::_phrase(uint16_t code) {
+const __FlashStringHelper* HttpResponse::_phrase(uint16_t code) {
     switch (code) {
-        case 200: return "OK";
-        case 201: return "Created";
-        case 204: return "No Content";
-        case 400: return "Bad Request";
-        case 404: return "Not Found";
-        case 405: return "Method Not Allowed";
-        case 408: return "Request Timeout";
-        case 500: return "Internal Server Error";
-        default:  return "Unknown";
+        case 200: return F("OK");
+        case 201: return F("Created");
+        case 204: return F("No Content");
+        case 400: return F("Bad Request");
+        case 404: return F("Not Found");
+        case 405: return F("Method Not Allowed");
+        case 408: return F("Request Timeout");
+        case 500: return F("Internal Server Error");
+        default:  return F("Unknown");
     }
 }
 
@@ -90,9 +92,9 @@ void WebServer::begin() {
     _resetParser();
 }
 
-bool WebServer::on(const char* path, HttpMethod method, RouteHandler handler) {
+bool WebServer::on(const __FlashStringHelper* path, HttpMethod method, RouteHandler handler) {
     if (_routeCount >= WS_MAX_ROUTES) return false;
-    _routes[_routeCount].path    = path;
+    _routes[_routeCount].path    = reinterpret_cast<PGM_P>(path);
     _routes[_routeCount].method  = method;
     _routes[_routeCount].handler = handler;
     _routeCount++;
@@ -151,7 +153,7 @@ void WebServer::update() {
     // Malformed request line
     if (_parseState == PS_ERROR) {
         HttpResponse res(&_client);
-        res.badRequest("Malformed request");
+        res.badRequest(F("Malformed request"));
         _client.stop();
         _resetParser();
     }
@@ -258,10 +260,10 @@ bool WebServer::_parseRequestLine() {
     // Expected format: "GET /path?query HTTP/1.1"
     char* p = _lineBuf;
 
-    if (strncmp(p, "GET ", 4) == 0) {
+    if (strncmp_P(p, PSTR("GET "), 4) == 0) {
         _method = HTTP_GET;
         p += 4;
-    } else if (strncmp(p, "POST ", 5) == 0) {
+    } else if (strncmp_P(p, PSTR("POST "), 5) == 0) {
         _method = HTTP_POST;
         p += 5;
     } else {
@@ -310,7 +312,7 @@ bool WebServer::_parseRequestLine() {
 
 void WebServer::_processHeader() {
     // Only Content-Length is needed; all other headers are discarded
-    if (_strEqCI(_lineBuf, "Content-Length:", 15)) {
+    if (_strEqCI(_lineBuf, PSTR("Content-Length:"), 15)) {
         const char* p = _lineBuf + 15;
         while (*p == ' ') p++;
         _contentLength = (uint16_t)atoi(p);
@@ -323,7 +325,7 @@ void WebServer::_dispatch(const HttpRequest& req) {
     bool pathFound = false;
 
     for (uint8_t i = 0; i < _routeCount; i++) {
-        if (strcmp(req.path, _routes[i].path) == 0) {
+        if (strcmp_P(req.path, _routes[i].path) == 0) {
             pathFound = true;
             if (_routes[i].method == req.method) {
                 HttpResponse res(&_client);
@@ -346,9 +348,9 @@ void WebServer::_dispatch(const HttpRequest& req) {
 
 // ─── _strEqCI() ──────────────────────────────────────────────────────────────
 
-bool WebServer::_strEqCI(const char* a, const char* b, uint8_t len) {
+bool WebServer::_strEqCI(const char* a, PGM_P b, uint8_t len) {
     for (uint8_t i = 0; i < len; i++) {
-        if (tolower((uint8_t)a[i]) != tolower((uint8_t)b[i])) return false;
+        if (tolower((uint8_t)a[i]) != tolower(pgm_read_byte(&b[i]))) return false;
     }
     return true;
 }

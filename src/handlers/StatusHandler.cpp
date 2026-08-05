@@ -9,7 +9,7 @@
 
 size_t buildStatusJson(char* out, size_t outLen,
                        GpsModule* gps, CompassModule* compass, RotorService* rotor,
-                       const char* prefix) {
+                       const __FlashStringHelper* prefix) {
     if (!out || outLen == 0 || !gps || !compass) return 0;
 
     const GpsData&     g = gps->getData();
@@ -49,7 +49,7 @@ size_t buildStatusJson(char* out, size_t outLen,
     // snprintf_P + PSTR: el formato (~150 bytes) vive en Flash, no en SRAM.
     int n = snprintf_P(out, outLen,
         PSTR("{"
-          "%s"
+          "%S"
           "\"gps\":{"
             "\"lat\":\"%s\","
             "\"lon\":\"%s\","
@@ -71,7 +71,7 @@ size_t buildStatusJson(char* out, size_t outLen,
             "\"band_6\":%s"
           "}"
         "}"),
-        prefix ? prefix : "",
+        prefix ? prefix : F(""),
         lat, lon, alt, dt, hdg,
         nav_az, nav_el,
         b0, b1, b2, b3, b4, b5, b6

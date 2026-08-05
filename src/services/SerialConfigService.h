@@ -35,5 +35,7 @@ private:
     void _handleSetConfig(const char* json);
     void _handleResetConfig();
     void _emit(const char* json);
-    void _emitError(const char* msg);
+    void _emit(const __FlashStringHelper* json);
+    void _emitError(const char* msg);                  // RAM msg (e.g. validate() output)
+    void _emitError(const __FlashStringHelper* msg);   // flash literal
 };

@@ -28,14 +28,14 @@ void handleGetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
     if (s_activityWd) s_activityWd->feed(s_httpChannelId);
 
     char body[300];
-    int n = snprintf(body, sizeof(body),
-        "{\"rf_watchdog\":{\"timeout_seconds\":%lu,\"active\":%s},"
-        "\"activity_watchdog\":{\"channels\":[",
+    int n = snprintf_P(body, sizeof(body),
+        PSTR("{\"rf_watchdog\":{\"timeout_seconds\":%lu,\"active\":%S},"
+        "\"activity_watchdog\":{\"channels\":["),
         s_rfWd ? s_rfWd->getMaxOnMs() / 1000UL : 0UL,
-        (s_rfWd && s_rfWd->isAnyOn()) ? "true" : "false");
+        (s_rfWd && s_rfWd->isAnyOn()) ? PSTR("true") : PSTR("false"));
 
     if (n < 0 || (size_t)n >= sizeof(body)) {
-        char errBody[128] = "{\"error\":\"buffer overflow\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"buffer overflow\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(500, errBody);
         return;
@@ -45,13 +45,13 @@ void handleGetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
         int count = s_activityWd->channelCount();
         for (int i = 0; i < count; i++) {
             const char* name = s_activityWd->channelName(i);
-            int extra = snprintf(body + n, sizeof(body) - n,
-                "%s{\"name\":\"%s\",\"timeout_ms\":%lu}",
-                (i == 0) ? "" : ",",
+            int extra = snprintf_P(body + n, sizeof(body) - n,
+                PSTR("%S{\"name\":\"%s\",\"timeout_ms\":%lu}"),
+                (i == 0) ? PSTR("") : PSTR(","),
                 name ? name : "",
                 s_activityWd->channelTimeoutMs(i));
             if (extra < 0 || (size_t)extra >= sizeof(body) - n) {
-                char errBody[128] = "{\"error\":\"buffer overflow\"}";
+                char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"buffer overflow\"}"));
                 injectTimestamp(errBody, sizeof(errBody));
                 res.json(500, errBody);
                 return;
@@ -60,9 +60,9 @@ void handleGetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
         }
     }
 
-    int extra = snprintf(body + n, sizeof(body) - n, "]}}");
+    int extra = snprintf_P(body + n, sizeof(body) - n, PSTR("]}}"));
     if (extra < 0 || (size_t)extra >= sizeof(body) - n) {
-        char errBody[128] = "{\"error\":\"buffer overflow\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"buffer overflow\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(500, errBody);
         return;
@@ -83,7 +83,7 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid request_id\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -91,16 +91,16 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
 
     bool anyField = false;
 
-    if (jsonHasKey(body, "rf_timeout_seconds")) {
+    if (jsonHasKey(body, F("rf_timeout_seconds"))) {
         if (!s_rfWd) {
-            char errBody[128] = "{\"error\":\"rf watchdog not available\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"rf watchdog not available\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(503, errBody);
             return;
         }
-        long seconds = (long)jsonGetInt(body, "rf_timeout_seconds", -1);
+        long seconds = (long)jsonGetInt(body, F("rf_timeout_seconds"), -1);
         if (seconds < MIN_TIMEOUT_S || seconds > MAX_TIMEOUT_S) {
-            char errBody[128] = "{\"error\":\"rf_timeout_seconds out of range (1..3600)\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"rf_timeout_seconds out of range (1..3600)\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
@@ -109,16 +109,16 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
         anyField = true;
     }
 
-    if (jsonHasKey(body, "http_timeout_seconds")) {
+    if (jsonHasKey(body, F("http_timeout_seconds"))) {
         if (!s_activityWd || s_httpChannelId < 0) {
-            char errBody[128] = "{\"error\":\"http watchdog not available\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"http watchdog not available\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(503, errBody);
             return;
         }
-        long seconds = (long)jsonGetInt(body, "http_timeout_seconds", -1);
+        long seconds = (long)jsonGetInt(body, F("http_timeout_seconds"), -1);
         if (seconds < MIN_TIMEOUT_S || seconds > MAX_TIMEOUT_S) {
-            char errBody[128] = "{\"error\":\"http_timeout_seconds out of range (1..3600)\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"http_timeout_seconds out of range (1..3600)\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
@@ -128,16 +128,16 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
         anyField = true;
     }
 
-    if (jsonHasKey(body, "control_timeout_seconds")) {
+    if (jsonHasKey(body, F("control_timeout_seconds"))) {
         if (!s_activityWd || s_controlChannelId < 0) {
-            char errBody[128] = "{\"error\":\"control watchdog not available\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"control watchdog not available\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(503, errBody);
             return;
         }
-        long seconds = (long)jsonGetInt(body, "control_timeout_seconds", -1);
+        long seconds = (long)jsonGetInt(body, F("control_timeout_seconds"), -1);
         if (seconds < MIN_TIMEOUT_S || seconds > MAX_TIMEOUT_S) {
-            char errBody[128] = "{\"error\":\"control_timeout_seconds out of range (1..3600)\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"control_timeout_seconds out of range (1..3600)\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
@@ -148,7 +148,7 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
     }
 
     if (!anyField) {
-        char errBody[128] = "{\"error\":\"no watchdog field provided\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"no watchdog field provided\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -156,10 +156,10 @@ void handleSetWatchdogConfig(const HttpRequest& req, HttpResponse& res) {
 
     char respBody[160];
     if (ridState == 1) {
-        snprintf(respBody, sizeof(respBody),
-                 "{\"status\":\"updated\",\"request_id\":\"%s\"}", rid);
+        snprintf_P(respBody, sizeof(respBody),
+                   PSTR("{\"status\":\"updated\",\"request_id\":\"%s\"}"), rid);
     } else {
-        snprintf(respBody, sizeof(respBody), "{\"status\":\"updated\"}");
+        strcpy_P(respBody, PSTR("{\"status\":\"updated\"}"));
     }
     injectTimestamp(respBody, sizeof(respBody));
     res.json(200, respBody);

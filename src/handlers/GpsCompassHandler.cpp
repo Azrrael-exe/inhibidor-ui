@@ -25,7 +25,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_gps || !s_compass) {
-        char errBody[128] = "{\"error\":\"module not initialized\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"module not initialized\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(503, errBody);
         return;
@@ -34,7 +34,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(req.params, /*isQueryString=*/true, rid, sizeof(rid));
     if (ridState < 0) {
-        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid request_id\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -43,7 +43,7 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
     char body[480];
     size_t n = buildStatusJson(body, sizeof(body), s_gps, s_compass, s_rotor);
     if (n == 0) {
-        char errBody[128] = "{\"error\":\"status payload overflow\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"status payload overflow\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(500, errBody);
         return;
@@ -51,10 +51,10 @@ void handleGetStatus(const HttpRequest& req, HttpResponse& res) {
 
     if (ridState == 1) {
         body[n - 1] = ',';
-        int extra = snprintf(body + n, sizeof(body) - n,
-                             "\"request_id\":\"%s\"}", rid);
+        int extra = snprintf_P(body + n, sizeof(body) - n,
+                               PSTR("\"request_id\":\"%s\"}"), rid);
         if (extra < 0 || (size_t)extra >= sizeof(body) - n) {
-            char errBody[128] = "{\"error\":\"status payload overflow\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"status payload overflow\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(500, errBody);
             return;

@@ -40,15 +40,15 @@ void handleGetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
 
     char macStr[18] = "";
     if (s_mac) {
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5]);
+        snprintf_P(macStr, sizeof(macStr), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
+                   s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5]);
     }
 
     char body[256];
-    snprintf(body, sizeof(body),
-        "{\"mode\":\"%s\",\"ip\":\"%s\",\"subnet\":\"%s\","
-        "\"gateway\":\"%s\",\"currentIp\":\"%s\",\"macAddress\":\"%s\"}",
-        cfg.useEepromConfig ? "static" : "dhcp",
+    snprintf_P(body, sizeof(body),
+        PSTR("{\"mode\":\"%S\",\"ip\":\"%s\",\"subnet\":\"%s\","
+        "\"gateway\":\"%s\",\"currentIp\":\"%s\",\"macAddress\":\"%s\"}"),
+        cfg.useEepromConfig ? PSTR("static") : PSTR("dhcp"),
         ipStr, subnetStr, gatewayStr, currentStr, macStr);
 
     injectTimestamp(body, sizeof(body));
@@ -73,15 +73,15 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid request_id\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
     }
 
     char mode[12];
-    if (!jsonGetString(body, "mode", mode, sizeof(mode))) {
-        char errBody[128] = "{\"error\":\"missing mode\"}";
+    if (!jsonGetString(body, F("mode"), mode, sizeof(mode))) {
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"missing mode\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -90,39 +90,39 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
     NetConfig cfg;
     NetworkConfig::factoryDefaults(cfg);
 
-    if (strcmp(mode, "dhcp") == 0) {
+    if (strcmp_P(mode, PSTR("dhcp")) == 0) {
         cfg.useEepromConfig = false;
-    } else if (strcmp(mode, "static") == 0) {
+    } else if (strcmp_P(mode, PSTR("static")) == 0) {
         char ipStr[20], subnetStr[20], gatewayStr[20];
-        if (!jsonGetString(body, "ip",      ipStr,      sizeof(ipStr))      ||
-            !jsonGetString(body, "subnet",  subnetStr,  sizeof(subnetStr))  ||
-            !jsonGetString(body, "gateway", gatewayStr, sizeof(gatewayStr))) {
-            char errBody[128] = "{\"error\":\"missing ip/subnet/gateway\"}";
+        if (!jsonGetString(body, F("ip"),      ipStr,      sizeof(ipStr))      ||
+            !jsonGetString(body, F("subnet"),  subnetStr,  sizeof(subnetStr))  ||
+            !jsonGetString(body, F("gateway"), gatewayStr, sizeof(gatewayStr))) {
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"missing ip/subnet/gateway\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
         }
         if (!parseIPv4(ipStr,      cfg.ip))      {
-            char errBody[128] = "{\"error\":\"invalid ip\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid ip\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
         }
         if (!parseIPv4(subnetStr,  cfg.subnet))  {
-            char errBody[128] = "{\"error\":\"invalid subnet\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid subnet\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
         }
         if (!parseIPv4(gatewayStr, cfg.gateway)) {
-            char errBody[128] = "{\"error\":\"invalid gateway\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid gateway\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(400, errBody);
             return;
         }
         cfg.useEepromConfig = true;
     } else {
-        char errBody[128] = "{\"error\":\"invalid mode\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid mode\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -131,14 +131,14 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
     char err[40];
     if (!NetworkConfig::validate(cfg, err, sizeof(err))) {
         char errBody[128];
-        snprintf(errBody, sizeof(errBody), "{\"error\":\"%s\"}", err);
+        snprintf_P(errBody, sizeof(errBody), PSTR("{\"error\":\"%s\"}"), err);
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
     }
 
     if (!NetworkConfig::save(cfg)) {
-        char errBody[128] = "{\"error\":\"eeprom write failed\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"eeprom write failed\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(500, errBody);
         return;
@@ -146,11 +146,10 @@ void handleSetNetworkConfig(const HttpRequest& req, HttpResponse& res) {
 
     char respBody[160];
     if (ridState == 1) {
-        snprintf(respBody, sizeof(respBody),
-                 "{\"status\":\"saved\",\"reboot\":true,\"request_id\":\"%s\"}", rid);
+        snprintf_P(respBody, sizeof(respBody),
+                   PSTR("{\"status\":\"saved\",\"reboot\":true,\"request_id\":\"%s\"}"), rid);
     } else {
-        snprintf(respBody, sizeof(respBody),
-                 "{\"status\":\"saved\",\"reboot\":true}");
+        strcpy_P(respBody, PSTR("{\"status\":\"saved\",\"reboot\":true}"));
     }
     injectTimestamp(respBody, sizeof(respBody));
     res.json(200, respBody);

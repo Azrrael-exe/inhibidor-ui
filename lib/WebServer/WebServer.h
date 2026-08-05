@@ -92,11 +92,13 @@ public:
     /** 404 {"error":"Not Found"} */
     void notFound();
 
-    /** 400 {"error":"<msg>"} */
-    void badRequest(const char* msg = "Bad Request");
+    /** 400 {"error":"<msg>"} — msg is a flash string: badRequest(F("...")) */
+    void badRequest();
+    void badRequest(const __FlashStringHelper* msg);
 
-    /** 500 {"error":"<msg>"} */
-    void serverError(const char* msg = "Internal Server Error");
+    /** 500 {"error":"<msg>"} — msg is a flash string: serverError(F("...")) */
+    void serverError();
+    void serverError(const __FlashStringHelper* msg);
 
     /** 405 {"error":"Method Not Allowed"} */
     void methodNotAllowed();
@@ -112,8 +114,8 @@ private:
     bool            _sent;
 
     void _send(uint16_t statusCode, const char* body);
-    void _sendError(uint16_t statusCode, const char* msg);
-    static const char* _phrase(uint16_t code);
+    void _sendError(uint16_t statusCode, const __FlashStringHelper* msg);
+    static const __FlashStringHelper* _phrase(uint16_t code);
 };
 
 // ─── Route handler type ───────────────────────────────────────────────────────
@@ -131,7 +133,7 @@ typedef void (*RouteHandler)(const HttpRequest& req, HttpResponse& res);
 // ─── Internal route entry ─────────────────────────────────────────────────────
 
 struct Route {
-    const char*  path;      ///< Path literal (static lifetime required)
+    const char*  path;      ///< Path literal in Flash (PROGMEM, via on(F("...")))
     RouteHandler handler;
     HttpMethod   method;
 };
@@ -194,12 +196,12 @@ public:
 
     /**
      * Register a route handler.
-     * @param path   URL path (exact match, must have static lifetime).
+     * @param path   URL path as a flash string: on(F("/status"), ...). Exact match.
      * @param method HTTP_GET or HTTP_POST.
      * @param handler Callback invoked on match.
      * @return true on success; false if route table is full.
      */
-    bool on(const char* path, HttpMethod method, RouteHandler handler);
+    bool on(const __FlashStringHelper* path, HttpMethod method, RouteHandler handler);
 
     /**
      * Service one iteration. Call every loop().
@@ -240,7 +242,7 @@ private:
     bool _parseRequestLine();
     void _processHeader();
     void _dispatch(const HttpRequest& req);
-    static bool _strEqCI(const char* a, const char* b, uint8_t len);
+    static bool _strEqCI(const char* a, PGM_P b, uint8_t len);
 };
 
 #endif // WEBSERVER_H

@@ -21,14 +21,14 @@ bool injectTimestamp(char* body, size_t bodyCapacity) {
     if (s_gps) {
         const GpsData& d = s_gps->getData();
         bool tv = d.nmea_ok && d.year >= 2024;
-        n = snprintf(suffix, sizeof(suffix),
-                     ",\"timestamp\":\"%04u-%02u-%02uT%02u:%02u:%02uZ\",\"time_valid\":%s}",
-                     (unsigned)d.year,   (unsigned)d.month,  (unsigned)d.day,
-                     (unsigned)d.hour,   (unsigned)d.minute, (unsigned)d.second,
-                     tv ? "true" : "false");
+        n = snprintf_P(suffix, sizeof(suffix),
+                       PSTR(",\"timestamp\":\"%04u-%02u-%02uT%02u:%02u:%02uZ\",\"time_valid\":%S}"),
+                       (unsigned)d.year,   (unsigned)d.month,  (unsigned)d.day,
+                       (unsigned)d.hour,   (unsigned)d.minute, (unsigned)d.second,
+                       tv ? PSTR("true") : PSTR("false"));
     } else {
-        n = snprintf(suffix, sizeof(suffix),
-                     ",\"timestamp\":\"0000-00-00T00:00:00Z\",\"time_valid\":false}");
+        n = snprintf_P(suffix, sizeof(suffix),
+                       PSTR(",\"timestamp\":\"0000-00-00T00:00:00Z\",\"time_valid\":false}"));
     }
 
     if (n < 0 || (size_t)n >= sizeof(suffix)) return false;

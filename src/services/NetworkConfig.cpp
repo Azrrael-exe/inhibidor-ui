@@ -96,9 +96,10 @@ void NetworkConfig::factoryDefaults(NetConfig& out) {
 }
 
 bool NetworkConfig::validate(const NetConfig& cfg, char* errOut, size_t errLen) {
-    auto fail = [&](const char* msg) {
+    // fail() copies from flash so the error literals stay out of SRAM.
+    auto fail = [&](const __FlashStringHelper* msg) {
         if (errOut && errLen) {
-            strncpy(errOut, msg, errLen - 1);
+            strncpy_P(errOut, reinterpret_cast<PGM_P>(msg), errLen - 1);
             errOut[errLen - 1] = '\0';
         }
         return false;
@@ -106,11 +107,11 @@ bool NetworkConfig::validate(const NetConfig& cfg, char* errOut, size_t errLen) 
 
     if (!cfg.useEepromConfig) return true; // DHCP mode → nothing to validate
 
-    if (cfg.ip == 0 || cfg.ip == 0xFFFFFFFFUL)         return fail("invalid ip");
-    if (cfg.gateway == 0 || cfg.gateway == 0xFFFFFFFFUL) return fail("invalid gateway");
-    if (cfg.subnet == 0 || cfg.subnet == 0xFFFFFFFFUL) return fail("invalid subnet");
-    if (!isContiguousMask(cfg.subnet))                 return fail("non-contiguous subnet");
-    if ((cfg.ip & cfg.subnet) != (cfg.gateway & cfg.subnet)) return fail("gateway not in subnet");
+    if (cfg.ip == 0 || cfg.ip == 0xFFFFFFFFUL)         return fail(F("invalid ip"));
+    if (cfg.gateway == 0 || cfg.gateway == 0xFFFFFFFFUL) return fail(F("invalid gateway"));
+    if (cfg.subnet == 0 || cfg.subnet == 0xFFFFFFFFUL) return fail(F("invalid subnet"));
+    if (!isContiguousMask(cfg.subnet))                 return fail(F("non-contiguous subnet"));
+    if ((cfg.ip & cfg.subnet) != (cfg.gateway & cfg.subnet)) return fail(F("gateway not in subnet"));
 
     return true;
 }

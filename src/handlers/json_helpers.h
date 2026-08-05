@@ -1,115 +1,74 @@
 #pragma once
 #include <Arduino.h>
+#include <avr/pgmspace.h>
 #include <WebServer.h>
 
-/**
- * Extract an integer value from a flat JSON object by key name.
- * Handles optional whitespace around ':'.
- * Returns defaultVal if the key is not found.
- *
- * Example: jsonGetInt("{\"foo\":1,\"bar\":0}", "foo", -1) → 1
- */
+// All key parameters take flash strings — call with F("key"). Keys are always
+// literals at the call sites, and this keeps them out of SRAM (~200 B total).
+
 // Longest key in the firmware is "control_timeout_seconds" (23 chars);
 // 32 fits `"<key>"` + NUL. Keep small: these live on the deepest stack path.
 #define JSON_KEY_PATTERN_LEN 32
 
-inline int jsonGetInt(const char* json, const char* key, int defaultVal) {
+/**
+ * Locate the value for `key` in a flat JSON object.
+ * Handles optional whitespace around ':'.
+ * Returns a pointer to the first char of the value, or nullptr if absent.
+ */
+inline const char* jsonFindValue(const char* json, const __FlashStringHelper* key) {
     char pattern[JSON_KEY_PATTERN_LEN];
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    snprintf_P(pattern, sizeof(pattern), PSTR("\"%S\""), key);
 
     const char* p = strstr(json, pattern);
-    if (!p) return defaultVal;
+    if (!p) return nullptr;
 
     p += strlen(pattern);
     while (*p == ' ' || *p == '\t') p++;
-    if (*p != ':') return defaultVal;
+    if (*p != ':') return nullptr;
     p++;
     while (*p == ' ' || *p == '\t') p++;
-
-    return atoi(p);
+    return p;
 }
 
-/**
- * Extract a boolean value from a flat JSON object by key name.
- * Returns 1 (true), 0 (false), or defaultVal if the key is not found.
- *
- * Example: jsonGetBool("{\"active\":true}", "active", -1) → 1
- */
-inline int jsonGetBool(const char* json, const char* key, int defaultVal) {
-    char pattern[JSON_KEY_PATTERN_LEN];
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+/** Extract an integer value by key. Returns defaultVal if the key is absent. */
+inline int jsonGetInt(const char* json, const __FlashStringHelper* key, int defaultVal) {
+    const char* p = jsonFindValue(json, key);
+    return p ? atoi(p) : defaultVal;
+}
 
-    const char* p = strstr(json, pattern);
+/** Extract a boolean by key: 1 (true), 0 (false), or defaultVal if absent/invalid. */
+inline int jsonGetBool(const char* json, const __FlashStringHelper* key, int defaultVal) {
+    const char* p = jsonFindValue(json, key);
     if (!p) return defaultVal;
-
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != ':') return defaultVal;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-
-    if (strncmp(p, "true",  4) == 0) return 1;
-    if (strncmp(p, "false", 5) == 0) return 0;
+    if (strncmp_P(p, PSTR("true"),  4) == 0) return 1;
+    if (strncmp_P(p, PSTR("false"), 5) == 0) return 0;
     return defaultVal;
 }
 
-/**
- * Extract a float value from a flat JSON object by key name.
- * Handles optional whitespace around ':'.
- * Returns defaultVal if the key is not found.
- *
- * Example: jsonGetFloat("{\"az\":180.5}", "az", 0.0f) → 180.5
- */
-inline float jsonGetFloat(const char* json, const char* key, float defaultVal) {
-    char pattern[JSON_KEY_PATTERN_LEN];
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-
-    const char* p = strstr(json, pattern);
-    if (!p) return defaultVal;
-
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != ':') return defaultVal;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-
-    return (float)atof(p);
+/** Extract a float value by key. Returns defaultVal if the key is absent. */
+inline float jsonGetFloat(const char* json, const __FlashStringHelper* key, float defaultVal) {
+    const char* p = jsonFindValue(json, key);
+    return p ? (float)atof(p) : defaultVal;
 }
 
-/**
- * Returns true if the key exists anywhere in the JSON object.
- *
- * Example: jsonHasKey("{\"az\":180.5}", "az") → true
- */
-inline bool jsonHasKey(const char* json, const char* key) {
+/** Returns true if the key exists anywhere in the JSON object. */
+inline bool jsonHasKey(const char* json, const __FlashStringHelper* key) {
     char pattern[JSON_KEY_PATTERN_LEN];
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    snprintf_P(pattern, sizeof(pattern), PSTR("\"%S\""), key);
     return strstr(json, pattern) != nullptr;
 }
 
 /**
- * Extract a string value from a flat JSON object by key name.
- * Copies the raw value (without surrounding quotes) into out, NUL-terminated.
+ * Extract a string value by key (without surrounding quotes) into out.
  * Returns true if the key was found and a string value was extracted.
- *
- * Example: jsonGetString("{\"mode\":\"static\"}", "mode", buf, sizeof(buf)) → buf="static"
  */
-inline bool jsonGetString(const char* json, const char* key, char* out, size_t outLen) {
+inline bool jsonGetString(const char* json, const __FlashStringHelper* key,
+                          char* out, size_t outLen) {
     if (!out || outLen == 0) return false;
     out[0] = '\0';
 
-    char pattern[JSON_KEY_PATTERN_LEN];
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-
-    const char* p = strstr(json, pattern);
-    if (!p) return false;
-
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != ':') return false;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != '"') return false;
+    const char* p = jsonFindValue(json, key);
+    if (!p || *p != '"') return false;
     p++; // past opening quote
 
     size_t i = 0;
@@ -151,7 +110,7 @@ inline bool parseIPv4(const char* s, uint32_t& outBE) {
 
 /** Format a network-byte-order 32-bit IPv4 into "a.b.c.d" (NUL-terminated). */
 inline void formatIPv4(uint32_t ipBE, char* out, size_t outLen) {
-    snprintf(out, outLen, "%u.%u.%u.%u",
+    snprintf_P(out, outLen, PSTR("%u.%u.%u.%u"),
              (unsigned)((ipBE >> 24) & 0xFF),
              (unsigned)((ipBE >> 16) & 0xFF),
              (unsigned)((ipBE >>  8) & 0xFF),
@@ -163,19 +122,19 @@ inline void formatIPv4(uint32_t ipBE, char* out, size_t outLen) {
  * Match is anchored at start of string or right after '&' to avoid substring matches.
  * Value is copied (without percent-decoding) into out, NUL-terminated.
  * Returns true if the key was found (even if its value is empty); false if key absent.
- *
- * Example: queryGetString("foo=1&request_id=abc", "request_id", buf, sizeof(buf)) → buf="abc"
  */
-inline bool queryGetString(const char* query, const char* key, char* out, size_t outLen) {
+inline bool queryGetString(const char* query, const __FlashStringHelper* key,
+                           char* out, size_t outLen) {
     if (!query || !key || !out || outLen == 0) return false;
     out[0] = '\0';
 
-    size_t keyLen = strlen(key);
+    PGM_P k = reinterpret_cast<PGM_P>(key);
+    size_t keyLen = strlen_P(k);
     const char* p = query;
 
     while (*p) {
         bool atBoundary = (p == query) || (*(p - 1) == '&');
-        if (atBoundary && strncmp(p, key, keyLen) == 0 && p[keyLen] == '=') {
+        if (atBoundary && strncmp_P(p, k, keyLen) == 0 && p[keyLen] == '=') {
             p += keyLen + 1;
             size_t i = 0;
             while (*p && *p != '&' && i < outLen - 1) {
@@ -223,13 +182,13 @@ inline int extractRequestId(const char* source, bool isQueryString,
     out[0] = '\0';
 
     bool found = isQueryString
-        ? queryGetString(source, "request_id", out, outLen)
-        : jsonGetString(source, "request_id", out, outLen);
+        ? queryGetString(source, F("request_id"), out, outLen)
+        : jsonGetString(source, F("request_id"), out, outLen);
 
     if (!found) {
         // jsonGetString returns false even when the key is present but value isn't a string
         // (e.g. "request_id":123). Treat that as a malformed presence → 400.
-        if (!isQueryString && jsonHasKey(source, "request_id")) {
+        if (!isQueryString && jsonHasKey(source, F("request_id"))) {
             return -1;
         }
         return 0;

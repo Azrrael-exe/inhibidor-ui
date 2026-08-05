@@ -18,14 +18,14 @@ void handleHardStop(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_useCase) {
-        char errBody[128] = "{\"error\":\"use case not available\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"use case not available\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(503, errBody);
         return;
     }
 
     s_useCase->execute();
-    char body[128] = "{\"status\":\"hard_stop_executed\"}";
+    char body[128]; strcpy_P(body, PSTR("{\"status\":\"hard_stop_executed\"}"));
     injectTimestamp(body, sizeof(body));
     res.json(200, body);
 }

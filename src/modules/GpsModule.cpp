@@ -81,9 +81,9 @@ void GpsModule::parseSentence() {
     _data.nmea_ok = true;
 
     // Comparar los primeros 5 chars del tipo de sentencia (sin el $)
-    if (strncmp(_buf + 1, "GPRMC", 5) == 0 || strncmp(_buf + 1, "GNRMC", 5) == 0) {
+    if (strncmp_P(_buf + 1, PSTR("GPRMC"), 5) == 0 || strncmp_P(_buf + 1, PSTR("GNRMC"), 5) == 0) {
         parseRMC(_buf);
-    } else if (strncmp(_buf + 1, "GPGGA", 5) == 0 || strncmp(_buf + 1, "GNGGA", 5) == 0) {
+    } else if (strncmp_P(_buf + 1, PSTR("GPGGA"), 5) == 0 || strncmp_P(_buf + 1, PSTR("GNGGA"), 5) == 0) {
         parseGGA(_buf);
     }
 }

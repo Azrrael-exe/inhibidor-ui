@@ -15,7 +15,7 @@ void SerialConfigService::begin(Stream* serial, const uint8_t mac[6]) {
     _lineOverflow = false;
     memcpy(_mac, mac, 6);
 
-    _emit("{\"info\":\"config-channel\",\"commands\":[\"get-config\",\"set-config\",\"reset-config\"]}");
+    _emit(F("{\"info\":\"config-channel\",\"commands\":[\"get-config\",\"set-config\",\"reset-config\"]}"));
 }
 
 void SerialConfigService::update() {
@@ -30,7 +30,7 @@ void SerialConfigService::update() {
                 _lineBuf[_lineLen] = '\0';
                 _processLine(_lineBuf);
             } else if (_lineOverflow) {
-                _emitError("line too long");
+                _emitError(F("line too long"));
             }
             _lineLen = 0;
             _lineOverflow = false;
@@ -51,19 +51,19 @@ void SerialConfigService::_processLine(const char* line) {
     if (*line != '{') return;  // not a JSON command — ignore (logger output)
 
     char cmd[24];
-    if (!jsonGetString(line, "cmd", cmd, sizeof(cmd))) {
-        _emitError("missing cmd");
+    if (!jsonGetString(line, F("cmd"), cmd, sizeof(cmd))) {
+        _emitError(F("missing cmd"));
         return;
     }
 
-    if (strcmp(cmd, "get-config") == 0) {
+    if (strcmp_P(cmd, PSTR("get-config")) == 0) {
         _handleGetConfig();
-    } else if (strcmp(cmd, "set-config") == 0) {
+    } else if (strcmp_P(cmd, PSTR("set-config")) == 0) {
         _handleSetConfig(line);
-    } else if (strcmp(cmd, "reset-config") == 0) {
+    } else if (strcmp_P(cmd, PSTR("reset-config")) == 0) {
         _handleResetConfig();
     } else {
-        _emitError("unknown cmd");
+        _emitError(F("unknown cmd"));
     }
 }
 
@@ -83,44 +83,44 @@ void SerialConfigService::_handleGetConfig() {
     formatIPv4(curBE, currentStr, sizeof(currentStr));
 
     char macStr[18];
-    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-             _mac[0], _mac[1], _mac[2], _mac[3], _mac[4], _mac[5]);
+    snprintf_P(macStr, sizeof(macStr), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
+               _mac[0], _mac[1], _mac[2], _mac[3], _mac[4], _mac[5]);
 
     char body[200];
-    snprintf(body, sizeof(body),
-             "{\"mode\":\"%s\",\"ip\":\"%s\",\"subnet\":\"%s\",\"gateway\":\"%s\","
-             "\"currentIp\":\"%s\",\"macAddress\":\"%s\"}",
-             cfg.useEepromConfig ? "static" : "dhcp",
-             ipStr, subnetStr, gatewayStr, currentStr, macStr);
+    snprintf_P(body, sizeof(body),
+               PSTR("{\"mode\":\"%S\",\"ip\":\"%s\",\"subnet\":\"%s\",\"gateway\":\"%s\","
+               "\"currentIp\":\"%s\",\"macAddress\":\"%s\"}"),
+               cfg.useEepromConfig ? PSTR("static") : PSTR("dhcp"),
+               ipStr, subnetStr, gatewayStr, currentStr, macStr);
     _emit(body);
 }
 
 void SerialConfigService::_handleSetConfig(const char* json) {
     char mode[12];
-    if (!jsonGetString(json, "mode", mode, sizeof(mode))) {
-        _emitError("missing mode");
+    if (!jsonGetString(json, F("mode"), mode, sizeof(mode))) {
+        _emitError(F("missing mode"));
         return;
     }
 
     NetConfig cfg;
     NetworkConfig::factoryDefaults(cfg);
 
-    if (strcmp(mode, "dhcp") == 0) {
+    if (strcmp_P(mode, PSTR("dhcp")) == 0) {
         cfg.useEepromConfig = false;
-    } else if (strcmp(mode, "static") == 0) {
+    } else if (strcmp_P(mode, PSTR("static")) == 0) {
         char ipStr[20], subnetStr[20], gatewayStr[20];
-        if (!jsonGetString(json, "ip",      ipStr,      sizeof(ipStr))      ||
-            !jsonGetString(json, "subnet",  subnetStr,  sizeof(subnetStr))  ||
-            !jsonGetString(json, "gateway", gatewayStr, sizeof(gatewayStr))) {
-            _emitError("missing ip/subnet/gateway");
+        if (!jsonGetString(json, F("ip"),      ipStr,      sizeof(ipStr))      ||
+            !jsonGetString(json, F("subnet"),  subnetStr,  sizeof(subnetStr))  ||
+            !jsonGetString(json, F("gateway"), gatewayStr, sizeof(gatewayStr))) {
+            _emitError(F("missing ip/subnet/gateway"));
             return;
         }
-        if (!parseIPv4(ipStr,      cfg.ip))      { _emitError("invalid ip");      return; }
-        if (!parseIPv4(subnetStr,  cfg.subnet))  { _emitError("invalid subnet");  return; }
-        if (!parseIPv4(gatewayStr, cfg.gateway)) { _emitError("invalid gateway"); return; }
+        if (!parseIPv4(ipStr,      cfg.ip))      { _emitError(F("invalid ip"));      return; }
+        if (!parseIPv4(subnetStr,  cfg.subnet))  { _emitError(F("invalid subnet"));  return; }
+        if (!parseIPv4(gatewayStr, cfg.gateway)) { _emitError(F("invalid gateway")); return; }
         cfg.useEepromConfig = true;
     } else {
-        _emitError("invalid mode");
+        _emitError(F("invalid mode"));
         return;
     }
 
@@ -131,11 +131,11 @@ void SerialConfigService::_handleSetConfig(const char* json) {
     }
 
     if (!NetworkConfig::save(cfg)) {
-        _emitError("eeprom write failed");
+        _emitError(F("eeprom write failed"));
         return;
     }
 
-    _emit("{\"status\":\"saved\",\"reboot\":true}");
+    _emit(F("{\"status\":\"saved\",\"reboot\":true}"));
     _serial->flush();
     NetworkConfig::reboot();
 }
@@ -144,7 +144,7 @@ void SerialConfigService::_handleResetConfig() {
     NetConfig cfg;
     NetworkConfig::factoryDefaults(cfg);
     NetworkConfig::save(cfg);
-    _emit("{\"status\":\"saved\",\"reboot\":true}");
+    _emit(F("{\"status\":\"saved\",\"reboot\":true}"));
     _serial->flush();
     NetworkConfig::reboot();
 }
@@ -154,8 +154,19 @@ void SerialConfigService::_emit(const char* json) {
     _serial->println(json);
 }
 
+void SerialConfigService::_emit(const __FlashStringHelper* json) {
+    if (!_serial) return;
+    _serial->println(json);
+}
+
 void SerialConfigService::_emitError(const char* msg) {
     char body[80];
-    snprintf(body, sizeof(body), "{\"error\":\"%s\"}", msg ? msg : "error");
+    snprintf_P(body, sizeof(body), PSTR("{\"error\":\"%s\"}"), msg ? msg : "");
+    _emit(body);
+}
+
+void SerialConfigService::_emitError(const __FlashStringHelper* msg) {
+    char body[80];
+    snprintf_P(body, sizeof(body), PSTR("{\"error\":\"%S\"}"), msg);
     _emit(body);
 }

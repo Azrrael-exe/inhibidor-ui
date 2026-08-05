@@ -177,15 +177,15 @@ void setup() {
 
     webServer.begin();
     bool routesOk = true;
-    routesOk &= webServer.on("/status",                      HTTP_GET,  handleGetStatus);
-    routesOk &= webServer.on("/set-navigation-and-power",    HTTP_POST, handleSetNavigationAndPower);
-    routesOk &= webServer.on("/hard-stop",                   HTTP_POST, handleHardStop);
-    routesOk &= webServer.on("/homming",                     HTTP_POST, handleHomming);
-    routesOk &= webServer.on("/config/network",  HTTP_GET,  handleGetNetworkConfig);
-    routesOk &= webServer.on("/config/network",  HTTP_POST, handleSetNetworkConfig);
-    routesOk &= webServer.on("/config/watchdog", HTTP_GET,  handleGetWatchdogConfig);
-    routesOk &= webServer.on("/config/watchdog", HTTP_POST, handleSetWatchdogConfig);
-    routesOk &= webServer.on("/debug/sockets",   HTTP_GET,  handleDebugSockets);
+    routesOk &= webServer.on(F("/status"),                   HTTP_GET,  handleGetStatus);
+    routesOk &= webServer.on(F("/set-navigation-and-power"), HTTP_POST, handleSetNavigationAndPower);
+    routesOk &= webServer.on(F("/hard-stop"),                HTTP_POST, handleHardStop);
+    routesOk &= webServer.on(F("/homming"),                  HTTP_POST, handleHomming);
+    routesOk &= webServer.on(F("/config/network"),  HTTP_GET,  handleGetNetworkConfig);
+    routesOk &= webServer.on(F("/config/network"),  HTTP_POST, handleSetNetworkConfig);
+    routesOk &= webServer.on(F("/config/watchdog"), HTTP_GET,  handleGetWatchdogConfig);
+    routesOk &= webServer.on(F("/config/watchdog"), HTTP_POST, handleSetWatchdogConfig);
+    routesOk &= webServer.on(F("/debug/sockets"),   HTTP_GET,  handleDebugSockets);
     if (!routesOk) {
         Serial.println(F("[WebServer] ERROR: route table full — increase WS_MAX_ROUTES"));
     }

@@ -35,7 +35,7 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
     if (s_watchdog) s_watchdog->feed(s_channelId);
 
     if (!s_useCase) {
-        char errBody[128] = "{\"error\":\"rotor not available\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"rotor not available\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(503, errBody);
         return;
@@ -47,31 +47,32 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
     char rid[40];
     int ridState = extractRequestId(body, /*isQueryString=*/false, rid, sizeof(rid));
     if (ridState < 0) {
-        char errBody[128] = "{\"error\":\"invalid request_id\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"error\":\"invalid request_id\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
     }
 
-    bool  hasAz = jsonHasKey(body, "azimuth");
-    bool  hasEl = jsonHasKey(body, "elevation");
-    float az    = hasAz ? jsonGetFloat(body, "azimuth",   0.0f) : 0.0f;
-    float el    = hasEl ? jsonGetFloat(body, "elevation", 0.0f) : 0.0f;
-
-    static const char* const BAND_KEYS[7] = {
-        "band_0", "band_1", "band_2", "band_3", "band_4", "band_5", "band_6"
-    };
+    bool  hasAz = jsonHasKey(body, F("azimuth"));
+    bool  hasEl = jsonHasKey(body, F("elevation"));
+    float az    = hasAz ? jsonGetFloat(body, F("azimuth"),   0.0f) : 0.0f;
+    float el    = hasEl ? jsonGetFloat(body, F("elevation"), 0.0f) : 0.0f;
 
     // -1 = absent (don't touch pin), 0 = LOW, 1 = HIGH
+    // Unrolled so every key literal lives in Flash via F().
     int8_t bands[7];
-    for (uint8_t i = 0; i < 7; i++) {
-        bands[i] = (int8_t)jsonGetBool(body, BAND_KEYS[i], -1);
-    }
+    bands[0] = (int8_t)jsonGetBool(body, F("band_0"), -1);
+    bands[1] = (int8_t)jsonGetBool(body, F("band_1"), -1);
+    bands[2] = (int8_t)jsonGetBool(body, F("band_2"), -1);
+    bands[3] = (int8_t)jsonGetBool(body, F("band_3"), -1);
+    bands[4] = (int8_t)jsonGetBool(body, F("band_4"), -1);
+    bands[5] = (int8_t)jsonGetBool(body, F("band_5"), -1);
+    bands[6] = (int8_t)jsonGetBool(body, F("band_6"), -1);
 
     char errMsg[48] = {};
     if (!s_useCase->execute(hasAz, az, hasEl, el, bands, errMsg, sizeof(errMsg))) {
         char errBody[128];
-        snprintf(errBody, sizeof(errBody), "{\"error\":\"%s\"}", errMsg);
+        snprintf_P(errBody, sizeof(errBody), PSTR("{\"error\":\"%s\"}"), errMsg);
         injectTimestamp(errBody, sizeof(errBody));
         res.json(400, errBody);
         return;
@@ -79,9 +80,9 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
 
     char respBody[440];
     size_t n = buildStatusJson(respBody, sizeof(respBody), s_gps, s_compass, s_rotor,
-                               "\"status\":\"queued\",");
+                               F("\"status\":\"queued\","));
     if (n == 0) {
-        char errBody[128] = "{\"status\":\"queued\"}";
+        char errBody[128]; strcpy_P(errBody, PSTR("{\"status\":\"queued\"}"));
         injectTimestamp(errBody, sizeof(errBody));
         res.json(200, errBody);
         return;
@@ -89,10 +90,10 @@ void handleSetNavigationAndPower(const HttpRequest& req, HttpResponse& res) {
 
     if (ridState == 1) {
         respBody[n - 1] = ',';
-        int extra = snprintf(respBody + n, sizeof(respBody) - n,
-                             "\"request_id\":\"%s\"}", rid);
+        int extra = snprintf_P(respBody + n, sizeof(respBody) - n,
+                               PSTR("\"request_id\":\"%s\"}"), rid);
         if (extra < 0 || (size_t)extra >= sizeof(respBody) - n) {
-            char errBody[128] = "{\"status\":\"queued\"}";
+            char errBody[128]; strcpy_P(errBody, PSTR("{\"status\":\"queued\"}"));
             injectTimestamp(errBody, sizeof(errBody));
             res.json(200, errBody);
             return;
