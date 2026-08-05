@@ -18,7 +18,17 @@ import streamlit as st
 # Constants
 # ---------------------------------------------------------------------------
 
-TIMEOUT = 3  # seconds
+# Connect is near-instant on LAN (the W5100 always keeps a LISTEN socket);
+# read must outlive the firmware's 500 ms busy window plus queued requests,
+# so an in-flight command is never abandoned (an abandoned POST still
+# executes on the device later — a ghost command).
+CONNECT_TIMEOUT = 1
+READ_TIMEOUT = 3
+TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
+# /status cache TTL, shared across sessions: N open tabs ≈ 1 poller for the
+# firmware, and widget-interaction reruns don't fire extra requests.
+POLL_TTL = 2.0
 AZ_MIN, AZ_MAX = 0.0, 450.0
 EL_MIN, EL_MAX = 0.0, 180.0
 NUM_BANDS = 7
@@ -54,10 +64,13 @@ def _build_cmd_result(
 # HTTP client
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=POLL_TTL, show_spinner=False)
 def get_status(ip: str) -> tuple[dict | None, str | None, str]:
     """Fetch /status with an auto-generated request_id.
     Returns (data, error, request_id). The request_id is always returned
-    so callers can correlate against data["request_id"] echo."""
+    so callers can correlate against data["request_id"] echo.
+    Cached for POLL_TTL seconds across ALL sessions, so multiple tabs and
+    widget-triggered reruns collapse into one request to the device."""
     rid = _make_rid()
     try:
         r = requests.get(
@@ -75,7 +88,7 @@ def get_status(ip: str) -> tuple[dict | None, str | None, str]:
     except requests.exceptions.ConnectionError:
         return None, "Connection refused — device offline or wrong IP", rid
     except requests.exceptions.Timeout:
-        return None, f"Timeout after {TIMEOUT}s", rid
+        return None, f"Timeout after {READ_TIMEOUT}s", rid
     except Exception as e:
         return None, f"Error: {e}", rid
 
@@ -102,7 +115,7 @@ def post_command(ip: str, payload: dict) -> tuple[str | None, str | None, str, s
     except requests.exceptions.ConnectionError:
         return None, "Connection refused", rid, None
     except requests.exceptions.Timeout:
-        return None, f"Timeout after {TIMEOUT}s", rid, None
+        return None, f"Timeout after {READ_TIMEOUT}s", rid, None
     except Exception as e:
         return None, f"Error: {e}", rid, None
 
@@ -121,7 +134,7 @@ def post_hard_stop(ip: str) -> tuple[str | None, str | None]:
     except requests.exceptions.ConnectionError:
         return None, "Connection refused"
     except requests.exceptions.Timeout:
-        return None, f"Timeout after {TIMEOUT}s"
+        return None, f"Timeout after {READ_TIMEOUT}s"
     except Exception as e:
         return None, f"Error: {e}"
 
@@ -135,7 +148,7 @@ def init_session_state():
         "last_status": None,
         "last_error": None,
         "last_cmd_result": None,   # ("success"|"error", message)
-        "refresh_interval": 3,
+        "refresh_interval": 5,
         "auto_refresh": True,
         "ctrl_azimuth": 0.0,
         "ctrl_elevation": 0.0,
@@ -189,7 +202,7 @@ def render_sidebar():
         st.session_state.device_ip = ip
 
         st.session_state.refresh_interval = st.number_input(
-            "Refresh interval (s)", min_value=1, max_value=60,
+            "Refresh interval (s)", min_value=2, max_value=60,
             value=st.session_state.refresh_interval,
         )
         st.session_state.auto_refresh = st.toggle(
@@ -216,6 +229,7 @@ def render_sidebar():
             )
 
         if st.button("Refresh now", use_container_width=True):
+            get_status.clear()  # bypass the POLL_TTL cache for a manual refresh
             st.rerun()
 
         st.divider()

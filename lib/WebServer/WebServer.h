@@ -15,8 +15,10 @@
 /**
  * Maximum length for request params / body including null terminator.
  * Used for GET query strings and POST JSON bodies.
- * Worst-case POST body: set-navigation-and-power with all 7 bands=false + 36-char request_id = 191 chars.
- * 220 leaves 28 chars of margin for optional whitespace or future fields.
+ * Worst-case POST body: set-navigation-and-power with all 7 bands=false +
+ * 32-char request_id, as serialized by python-requests (spaced separators:
+ * '{"azimuth": 450.0, ...}') = 207 chars measured. 220 leaves only 12 chars
+ * of margin — adding ANY field to that payload requires growing this buffer.
  */
 #define WS_PARAMS_LEN       220
 
@@ -29,9 +31,13 @@
 
 /**
  * Maximum time (in milliseconds) to wait for an inactive client
- * before forcibly closing the connection to prevent blocking.
+ * before forcibly closing the connection (with a 408) to prevent blocking.
+ * Also bounds how long a queued client waits while a stalled one holds the
+ * parser: on a LAN a healthy client never pauses 500 ms between bytes of a
+ * <400-byte request, and clients waiting in the W5100 queue are served
+ * within one window instead of hitting their own read timeout.
  */
-#define WS_CLIENT_TIMEOUT_MS 3000
+#define WS_CLIENT_TIMEOUT_MS 500
 
 // ─── HttpMethod ───────────────────────────────────────────────────────────────
 

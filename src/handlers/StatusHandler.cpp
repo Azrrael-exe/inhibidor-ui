@@ -46,8 +46,9 @@ size_t buildStatusJson(char* out, size_t outLen,
     const char* b5 = digitalRead(RF_BAND_5) ? "true" : "false";
     const char* b6 = digitalRead(RF_BAND_6) ? "true" : "false";
 
-    int n = snprintf(out, outLen,
-        "{"
+    // snprintf_P + PSTR: el formato (~150 bytes) vive en Flash, no en SRAM.
+    int n = snprintf_P(out, outLen,
+        PSTR("{"
           "%s"
           "\"gps\":{"
             "\"lat\":\"%s\","
@@ -69,7 +70,7 @@ size_t buildStatusJson(char* out, size_t outLen,
             "\"band_5\":%s,"
             "\"band_6\":%s"
           "}"
-        "}",
+        "}"),
         prefix ? prefix : "",
         lat, lon, alt, dt, hdg,
         nav_az, nav_el,

@@ -102,14 +102,19 @@ bool WebServer::on(const char* path, HttpMethod method, RouteHandler handler) {
 // ─── update() ────────────────────────────────────────────────────────────────
 
 void WebServer::update() {
+    // Poll the socket table on EVERY call, even mid-request. Inside
+    // available() the Ethernet lib re-opens a LISTEN socket when none
+    // remains and reaps half-closed sockets. Without this, a second client
+    // consumes the only LISTEN socket while we parse the first one, and any
+    // further SYN gets RST from the W5100 — the proxy logs that as 502.
+    EthernetClient incoming = _server.available();
+
     // Accept a new client if idle
-    if (_parseState == PS_IDLE) {
-        _client = _server.available();
-        if (_client) {
-            _resetParser();
-            _parseState = PS_REQUEST_LINE;
-            _lastActivityMs = millis();
-        }
+    if (_parseState == PS_IDLE && incoming) {
+        _client = incoming;
+        _resetParser();
+        _parseState = PS_REQUEST_LINE;
+        _lastActivityMs = millis();
     }
 
     // Check for inactive client timeout. Send a real HTTP response before

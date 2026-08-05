@@ -7,6 +7,7 @@
 #include "callback.h"
 #include <Controllino.h>
 #include <Ethernet.h>
+#include <utility/w5100.h>
 #include <Wire.h>
 #include <WebServer.h>
 #include "handlers/GpsCompassHandler.h"
@@ -96,6 +97,27 @@ void triggerHomming(void* context) {
     hommingUseCase.execute();
 }
 
+// ponytail: endpoint de diagnóstico para sockets W5100 colgados; borrar al cerrar el bug de 502
+// Responde [[SnSR, server_port, rx_bytes] x4]. SnSR: 0=CLOSED 20=LISTEN 23=ESTABLISHED 28=CLOSE_WAIT
+static void handleDebugSockets(const HttpRequest& req, HttpResponse& res) {
+    uint8_t  sr[4];
+    uint16_t rx[4];
+    SPI.beginTransaction(SPI_ETHERNET_SETTINGS);
+    for (uint8_t i = 0; i < 4; i++) {
+        sr[i] = W5100.readSnSR(i);
+        rx[i] = W5100.readSnRX_RSR(i);
+    }
+    SPI.endTransaction();
+    char buf[120];
+    snprintf_P(buf, sizeof(buf),
+        PSTR("{\"sockets\":[[%u,%u,%u],[%u,%u,%u],[%u,%u,%u],[%u,%u,%u]]}"),
+        sr[0], EthernetServer::server_port[0], rx[0],
+        sr[1], EthernetServer::server_port[1], rx[1],
+        sr[2], EthernetServer::server_port[2], rx[2],
+        sr[3], EthernetServer::server_port[3], rx[3]);
+    res.json(200, buf);
+}
+
 void setup() {
     // Disable watchdog promptly after a WDT-induced reset (used by NetworkConfig::reboot).
     wdt_disable();
@@ -163,6 +185,7 @@ void setup() {
     routesOk &= webServer.on("/config/network",  HTTP_POST, handleSetNetworkConfig);
     routesOk &= webServer.on("/config/watchdog", HTTP_GET,  handleGetWatchdogConfig);
     routesOk &= webServer.on("/config/watchdog", HTTP_POST, handleSetWatchdogConfig);
+    routesOk &= webServer.on("/debug/sockets",   HTTP_GET,  handleDebugSockets);
     if (!routesOk) {
         Serial.println(F("[WebServer] ERROR: route table full — increase WS_MAX_ROUTES"));
     }
