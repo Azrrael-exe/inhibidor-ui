@@ -97,6 +97,17 @@ void triggerHomming(void* context) {
     hommingUseCase.execute();
 }
 
+// GET /version — commit y fecha de compilación, para saber qué firmware corre cada unidad
+#ifndef FW_COMMIT
+#define FW_COMMIT "unknown"
+#endif
+static void handleGetVersion(const HttpRequest& req, HttpResponse& res) {
+    char buf[80];
+    snprintf_P(buf, sizeof(buf), PSTR("{\"commit\":\"%S\",\"built\":\"%S %S\"}"),
+               PSTR(FW_COMMIT), PSTR(__DATE__), PSTR(__TIME__));
+    res.json(200, buf);
+}
+
 // ponytail: endpoint de diagnóstico para sockets W5100 colgados; borrar al cerrar el bug de 502
 // Responde [[SnSR, server_port, rx_bytes] x4]. SnSR: 0=CLOSED 20=LISTEN 23=ESTABLISHED 28=CLOSE_WAIT
 static void handleDebugSockets(const HttpRequest& req, HttpResponse& res) {
@@ -186,6 +197,7 @@ void setup() {
     routesOk &= webServer.on(F("/config/watchdog"), HTTP_GET,  handleGetWatchdogConfig);
     routesOk &= webServer.on(F("/config/watchdog"), HTTP_POST, handleSetWatchdogConfig);
     routesOk &= webServer.on(F("/debug/sockets"),   HTTP_GET,  handleDebugSockets);
+    routesOk &= webServer.on(F("/version"),         HTTP_GET,  handleGetVersion);
     if (!routesOk) {
         Serial.println(F("[WebServer] ERROR: route table full — increase WS_MAX_ROUTES"));
     }

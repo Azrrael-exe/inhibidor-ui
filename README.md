@@ -34,6 +34,17 @@ Los endpoints `GET /status`, `POST /set-navigation-and-power`, `POST /config/net
 
 ---
 
+### GET /version
+
+Identifica el firmware que corre la unidad: commit de git con el que se compiló (sufijo `-dirty` si había cambios sin commitear) y fecha/hora de compilación. Úsalo antes de diagnosticar cualquier problema para descartar firmware desactualizado.
+
+```bash
+curl http://<ip>/version
+# {"commit":"bf158eb","built":"Aug 21 2026 10:15:32"}
+```
+
+---
+
 ### GET /status
 
 Retorna el estado completo del sistema. Acepta `request_id` como query param opcional.

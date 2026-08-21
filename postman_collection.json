@@ -7,6 +7,20 @@
 	},
 	"item": [
 		{
+			"name": "GET /version",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/version",
+					"host": ["{{base_url}}"],
+					"path": ["version"]
+				},
+				"description": "Commit y fecha de compilación del firmware."
+			},
+			"response": []
+		},
+		{
 			"name": "GET /status",
 			"request": {
 				"method": "GET",
