@@ -167,6 +167,7 @@ def init_session_state():
         # Demo tab (persisten entre reruns del auto-refresh)
         "stress_output": None,     # (returncode, texto)
         "demo_log": None,          # list[str]
+        "demo_reqlog": None,       # list[str] — método, endpoint, código, latencia
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -490,50 +491,71 @@ def render_control_panel():
 # Demo tab
 # ---------------------------------------------------------------------------
 
-def _status_now(ip: str) -> dict | None:
-    """GET /status sin cache — para lecturas en vivo durante la demo."""
+def _demo_call(ip: str, method: str, path: str, reqlog: list[str],
+               payload: dict | None = None) -> tuple[dict | None, str | None]:
+    """Request HTTP de la demo con log visible: método, endpoint, código y latencia.
+    Devuelve (json, None) o (None, error)."""
+    t0 = time.time()
+    line = f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} {method:4s} /{path}"
     try:
-        r = requests.get(f"http://{ip}/status", timeout=TIMEOUT)
-        return r.json() if r.status_code == 200 else None
-    except Exception:
-        return None
+        r = requests.request(method, f"http://{ip}/{path}", json=payload, timeout=TIMEOUT)
+        ms = (time.time() - t0) * 1000
+        reqlog.append(f"{line} → {r.status_code} ({ms:.0f} ms)")
+        if r.status_code == 200:
+            return r.json(), None
+        try:
+            msg = r.json().get("error", r.text)
+        except Exception:
+            msg = r.text
+        return None, f"HTTP {r.status_code}: {msg}"
+    except Exception as e:
+        ms = (time.time() - t0) * 1000
+        err = type(e).__name__
+        reqlog.append(f"{line} → {err} ({ms:.0f} ms)")
+        return None, err
 
 
-def run_full_demo(ip: str, move_wait_s: int) -> list[str]:
-    """Secuencia end-to-end: versión → estado → bandas RF → rotor → homming → hard-stop.
-    Devuelve el log de pasos; deja el equipo en estado seguro (todo OFF) al final."""
+def run_full_demo(ip: str, move_wait_s: int, emit_rf: bool) -> tuple[list[str], list[str]]:
+    """Secuencia end-to-end: versión → estado → [bandas RF] → rotor → homming → hard-stop.
+    Devuelve (log de pasos, log de requests); deja el equipo en estado seguro al final."""
     log: list[str] = []
+    reqlog: list[str] = []
 
     def step(msg: str):
         log.append(msg)
         st.write(msg)
 
     # 1. Versión de firmware
-    try:
-        v = requests.get(f"http://{ip}/version", timeout=TIMEOUT).json()
+    v, err = _demo_call(ip, "GET", "version", reqlog)
+    if v:
         step(f"✅ Firmware: `{v.get('commit')}` compilado {v.get('built')}")
-    except Exception:
-        step("⚠️ GET /version falló — ¿firmware viejo? La demo sigue.")
+    else:
+        step(f"⚠️ GET /version falló ({err}) — ¿firmware viejo? La demo sigue.")
 
     # 2. Estado inicial
-    status = _status_now(ip)
+    status, err = _demo_call(ip, "GET", "status", reqlog)
     if not status:
-        step("❌ GET /status falló — abortando demo.")
-        return log
+        step(f"❌ GET /status falló ({err}) — abortando demo.")
+        return log, reqlog
     nav = status.get("navigation", {})
     step(f"✅ Estado inicial: az {nav.get('azimuth')}° / el {nav.get('elevation')}° — "
          f"GPS {status.get('gps', {}).get('lat', '—')}, {status.get('gps', {}).get('lon', '—')}")
 
-    # 3. Bandas RF en secuencia (una por vez, luego todas OFF)
-    step("▶️ Bandas RF: encendido secuencial…")
-    for i in range(NUM_BANDS):
-        payload = {f"band_{j}": (j == i) for j in range(NUM_BANDS)}
-        ok, err, _, _ = post_command(ip, payload)
-        if err:
-            step(f"❌ band_{i}: {err}")
-        time.sleep(0.4)
-    ok, err, _, _ = post_command(ip, {f"band_{i}": False for i in range(NUM_BANDS)})
-    step("✅ Bandas RF: secuencia completa, todas OFF" if not err else f"❌ apagando bandas: {err}")
+    # 3. Bandas RF en secuencia (una por vez, luego todas OFF) — solo si emit_rf
+    if emit_rf:
+        step("▶️ Bandas RF: encendido secuencial…")
+        for i in range(NUM_BANDS):
+            payload = {f"band_{j}": (j == i) for j in range(NUM_BANDS)}
+            _, err = _demo_call(ip, "POST", "set-navigation-and-power", reqlog, payload)
+            if err:
+                step(f"❌ band_{i}: {err}")
+            time.sleep(0.4)
+        _, err = _demo_call(ip, "POST", "set-navigation-and-power", reqlog,
+                            {f"band_{i}": False for i in range(NUM_BANDS)})
+        step("✅ Bandas RF: secuencia completa, todas OFF" if not err
+             else f"❌ apagando bandas: {err}")
+    else:
+        step("⏭️ Bandas RF: omitidas (emisión de RF deshabilitada)")
 
     # 4. Movimiento del rotor con lectura en vivo
     try:
@@ -542,7 +564,8 @@ def run_full_demo(ip: str, move_wait_s: int) -> list[str]:
         az0 = 0.0
     target_az = round((az0 + 45.0) % 360.0, 1)
     target_el = 30.0
-    ok, err, _, _ = post_command(ip, {"azimuth": target_az, "elevation": target_el})
+    _, err = _demo_call(ip, "POST", "set-navigation-and-power", reqlog,
+                        {"azimuth": target_az, "elevation": target_el})
     if err:
         step(f"❌ comando de movimiento: {err}")
     else:
@@ -550,24 +573,24 @@ def run_full_demo(ip: str, move_wait_s: int) -> list[str]:
         live = st.empty()
         for _ in range(move_wait_s):
             time.sleep(1)
-            s = _status_now(ip)
-            if s:
-                n = s.get("navigation", {})
+            snap, _e = _demo_call(ip, "GET", "status", reqlog)
+            if snap:
+                n = snap.get("navigation", {})
                 live.info(f"az {n.get('azimuth')}° / el {n.get('elevation')}°")
-        s = _status_now(ip)
-        n = s.get("navigation", {}) if s else {}
+        snap, _e = _demo_call(ip, "GET", "status", reqlog)
+        n = snap.get("navigation", {}) if snap else {}
         step(f"✅ Rotor tras {move_wait_s}s: az {n.get('azimuth', '—')}° / el {n.get('elevation', '—')}°")
 
     # 5. Homming (vuelta a posición de origen)
-    ok, err = post_simple(ip, "homming")
-    step("▶️ Homming enviado — el rotor vuelve a origen" if ok else f"❌ homming: {err}")
+    _, err = _demo_call(ip, "POST", "homming", reqlog)
+    step("▶️ Homming enviado — el rotor vuelve a origen" if not err else f"❌ homming: {err}")
     time.sleep(min(move_wait_s, 5))
 
     # 6. Hard-stop final: estado seguro garantizado
-    ok, err = post_simple(ip, "hard-stop")
+    _, err = _demo_call(ip, "POST", "hard-stop", reqlog)
     step("✅ Hard-stop final: bandas OFF, rotor detenido — equipo en estado seguro"
-         if ok else f"❌ hard-stop final: {err}")
-    return log
+         if not err else f"❌ hard-stop final: {err}")
+    return log, reqlog
 
 
 def render_demo_tab():
@@ -594,25 +617,36 @@ def render_demo_tab():
     st.divider()
 
     st.subheader("Demo completo del dispositivo")
-    st.warning(
-        "⚠️ Esta demo MUEVE el rotor G5500 y ENCIENDE bandas RF reales en secuencia. "
-        "Termina con homming + hard-stop (todo OFF)."
-    )
+    emit_rf = st.checkbox("Emitir RF (encendido secuencial de las 7 bandas)", value=False)
+    if emit_rf:
+        st.warning(
+            "⚠️ Esta demo MUEVE el rotor G5500 y ENCIENDE bandas RF reales en secuencia. "
+            "Termina con homming + hard-stop (todo OFF)."
+        )
+    else:
+        st.info("La demo mueve el rotor G5500 pero NO emite RF (bandas omitidas). "
+                "Termina con homming + hard-stop.")
     # ponytail: knob de espera — la velocidad real del rotor no se puede modelar, se calibra
     move_wait = st.number_input("Espera por movimiento del rotor (s)", 2, 30, 8)
-    armed = st.checkbox("Entiendo que el equipo va a moverse y emitir RF")
+    armed = st.checkbox("Entiendo que el equipo va a moverse"
+                        + (" y emitir RF" if emit_rf else ""))
     if st.button("Ejecutar demo completa", type="primary",
                  disabled=not armed, use_container_width=True):
         with st.status("Demo en curso…", expanded=True) as box:
-            log = run_full_demo(ip, int(move_wait))
+            log, reqlog = run_full_demo(ip, int(move_wait), emit_rf)
             failed = any(l.startswith("❌") for l in log)
             box.update(label="Demo con errores" if failed else "Demo completada",
                        state="error" if failed else "complete")
         st.session_state.demo_log = log
+        st.session_state.demo_reqlog = reqlog
     elif st.session_state.demo_log:
         st.caption("Último resultado:")
         for line in st.session_state.demo_log:
             st.write(line)
+    if st.session_state.demo_reqlog:
+        with st.expander(f"Log de requests ({len(st.session_state.demo_reqlog)})",
+                         expanded=False):
+            st.code("\n".join(st.session_state.demo_reqlog))
 
 # ---------------------------------------------------------------------------
 # Main
