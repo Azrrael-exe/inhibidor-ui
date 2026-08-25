@@ -516,7 +516,8 @@ def _demo_call(ip: str, method: str, path: str, reqlog: list[str],
 
 
 def run_full_demo(ip: str, move_wait_s: int, emit_rf: bool) -> tuple[list[str], list[str]]:
-    """Secuencia end-to-end: versión → estado → [bandas RF] → rotor → homming → hard-stop.
+    """Secuencia end-to-end: versión → estado → [bandas RF] → rutina de movimientos
+    (az ida/vuelta, elevación ida/vuelta, combinado, homming) → hard-stop.
     Devuelve (log de pasos, log de requests); deja el equipo en estado seguro al final."""
     log: list[str] = []
     reqlog: list[str] = []
@@ -557,34 +558,68 @@ def run_full_demo(ip: str, move_wait_s: int, emit_rf: bool) -> tuple[list[str], 
     else:
         step("⏭️ Bandas RF: omitidas (emisión de RF deshabilitada)")
 
-    # 4. Movimiento del rotor con lectura en vivo
+    # 4. Rutina de movimientos — checklist en vivo, uno por uno
     try:
         az0 = float(nav.get("azimuth", 0))
     except (TypeError, ValueError):
         az0 = 0.0
-    target_az = round((az0 + 45.0) % 360.0, 1)
-    target_el = 30.0
-    _, err = _demo_call(ip, "POST", "set-navigation-and-power", reqlog,
-                        {"azimuth": target_az, "elevation": target_el})
-    if err:
-        step(f"❌ comando de movimiento: {err}")
-    else:
-        step(f"▶️ Rotor: moviendo a az {target_az}° / el {target_el}°…")
-        live = st.empty()
+    try:
+        el0 = float(nav.get("elevation", 0))
+    except (TypeError, ValueError):
+        el0 = 0.0
+    az1 = round((az0 + 45.0) % 360.0, 1)
+
+    # (etiqueta, payload) — payload None = POST /homming
+    moves: list[tuple[str, dict | None]] = [
+        (f"Azimuth → {az1}° (+45°)",              {"azimuth": az1}),
+        (f"Azimuth → {round(az0, 1)}° (vuelta)",  {"azimuth": round(az0, 1)}),
+        ("Elevación → 45°",                        {"elevation": 45.0}),
+        (f"Elevación → {round(el0, 1)}° (vuelta)", {"elevation": round(el0, 1)}),
+        (f"Combinado → az {az1}° / el 30°",        {"azimuth": az1, "elevation": 30.0}),
+        ("Homming (vuelta a origen)",              None),
+    ]
+
+    checklist = st.empty()
+
+    def draw_checklist(current: int, live: str = "", failed: set[int] = frozenset()):
+        lines = []
+        for i, (label, _) in enumerate(moves):
+            if i in failed:
+                mark = "❌"
+            elif i < current:
+                mark = "✅"
+            elif i == current:
+                mark = "🔄"
+            else:
+                mark = "⬜"
+            suffix = f" — *{live}*" if i == current and live else ""
+            lines.append(f"- {mark} {label}{suffix}")
+        checklist.markdown("\n".join(lines))
+
+    step(f"▶️ Rutina de movimientos ({len(moves)} pasos, {move_wait_s}s c/u)…")
+    failed_moves: set[int] = set()
+    for idx, (label, payload) in enumerate(moves):
+        draw_checklist(idx, "enviando comando…", failed_moves)
+        if payload is None:
+            _, err = _demo_call(ip, "POST", "homming", reqlog)
+        else:
+            _, err = _demo_call(ip, "POST", "set-navigation-and-power", reqlog, payload)
+        if err:
+            failed_moves.add(idx)
+            step(f"❌ {label}: {err}")
+            continue
         for _ in range(move_wait_s):
             time.sleep(1)
             snap, _e = _demo_call(ip, "GET", "status", reqlog)
             if snap:
                 n = snap.get("navigation", {})
-                live.info(f"az {n.get('azimuth')}° / el {n.get('elevation')}°")
-        snap, _e = _demo_call(ip, "GET", "status", reqlog)
-        n = snap.get("navigation", {}) if snap else {}
-        step(f"✅ Rotor tras {move_wait_s}s: az {n.get('azimuth', '—')}° / el {n.get('elevation', '—')}°")
-
-    # 5. Homming (vuelta a posición de origen)
-    _, err = _demo_call(ip, "POST", "homming", reqlog)
-    step("▶️ Homming enviado — el rotor vuelve a origen" if not err else f"❌ homming: {err}")
-    time.sleep(min(move_wait_s, 5))
+                draw_checklist(idx, f"az {n.get('azimuth')}° / el {n.get('elevation')}°",
+                               failed_moves)
+    draw_checklist(len(moves), "", failed_moves)
+    if failed_moves:
+        step(f"❌ Rutina de movimientos: {len(failed_moves)} de {len(moves)} pasos fallaron")
+    else:
+        step(f"✅ Rutina de movimientos completa: {len(moves)}/{len(moves)} pasos")
 
     # 6. Hard-stop final: estado seguro garantizado
     _, err = _demo_call(ip, "POST", "hard-stop", reqlog)
