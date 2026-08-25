@@ -7,8 +7,11 @@
 # ///
 
 import json
+import subprocess
+import sys
 import time
 import uuid
+from pathlib import Path
 from datetime import datetime
 
 import requests
@@ -120,9 +123,10 @@ def post_command(ip: str, payload: dict) -> tuple[str | None, str | None, str, s
         return None, f"Error: {e}", rid, None
 
 
-def post_hard_stop(ip: str) -> tuple[str | None, str | None]:
+def post_simple(ip: str, endpoint: str) -> tuple[str | None, str | None]:
+    """POST sin body a /hard-stop o /homming."""
     try:
-        r = requests.post(f"http://{ip}/hard-stop", json={}, timeout=TIMEOUT)
+        r = requests.post(f"http://{ip}/{endpoint}", json={}, timeout=TIMEOUT)
         if r.status_code == 200:
             data = r.json()
             return data.get("status", "ok"), None
@@ -160,6 +164,9 @@ def init_session_state():
         "netcfg_ip": "192.168.1.100",
         "netcfg_subnet": "255.255.255.0",
         "netcfg_gateway": "192.168.1.1",
+        # Demo tab (persisten entre reruns del auto-refresh)
+        "stress_output": None,     # (returncode, texto)
+        "demo_log": None,          # list[str]
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -377,7 +384,7 @@ def render_control_panel():
             # Force visually unchecking the Streamlit widgets
             st.session_state[f"ctrl_band_{i}"] = False
             
-        ok, err = post_hard_stop(st.session_state.device_ip)
+        ok, err = post_simple(st.session_state.device_ip, "hard-stop")
         st.session_state.last_cmd_result = ("success", "🚨 EMERGENCIA: Parada del sistema (Hard Stop)") if ok else ("error", err)
         st.rerun()
 
@@ -478,6 +485,135 @@ def render_control_panel():
         else:
             st.error(msg)
 
+
+# ---------------------------------------------------------------------------
+# Demo tab
+# ---------------------------------------------------------------------------
+
+def _status_now(ip: str) -> dict | None:
+    """GET /status sin cache — para lecturas en vivo durante la demo."""
+    try:
+        r = requests.get(f"http://{ip}/status", timeout=TIMEOUT)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def run_full_demo(ip: str, move_wait_s: int) -> list[str]:
+    """Secuencia end-to-end: versión → estado → bandas RF → rotor → homming → hard-stop.
+    Devuelve el log de pasos; deja el equipo en estado seguro (todo OFF) al final."""
+    log: list[str] = []
+
+    def step(msg: str):
+        log.append(msg)
+        st.write(msg)
+
+    # 1. Versión de firmware
+    try:
+        v = requests.get(f"http://{ip}/version", timeout=TIMEOUT).json()
+        step(f"✅ Firmware: `{v.get('commit')}` compilado {v.get('built')}")
+    except Exception:
+        step("⚠️ GET /version falló — ¿firmware viejo? La demo sigue.")
+
+    # 2. Estado inicial
+    status = _status_now(ip)
+    if not status:
+        step("❌ GET /status falló — abortando demo.")
+        return log
+    nav = status.get("navigation", {})
+    step(f"✅ Estado inicial: az {nav.get('azimuth')}° / el {nav.get('elevation')}° — "
+         f"GPS {status.get('gps', {}).get('lat', '—')}, {status.get('gps', {}).get('lon', '—')}")
+
+    # 3. Bandas RF en secuencia (una por vez, luego todas OFF)
+    step("▶️ Bandas RF: encendido secuencial…")
+    for i in range(NUM_BANDS):
+        payload = {f"band_{j}": (j == i) for j in range(NUM_BANDS)}
+        ok, err, _, _ = post_command(ip, payload)
+        if err:
+            step(f"❌ band_{i}: {err}")
+        time.sleep(0.4)
+    ok, err, _, _ = post_command(ip, {f"band_{i}": False for i in range(NUM_BANDS)})
+    step("✅ Bandas RF: secuencia completa, todas OFF" if not err else f"❌ apagando bandas: {err}")
+
+    # 4. Movimiento del rotor con lectura en vivo
+    try:
+        az0 = float(nav.get("azimuth", 0))
+    except (TypeError, ValueError):
+        az0 = 0.0
+    target_az = round((az0 + 45.0) % 360.0, 1)
+    target_el = 30.0
+    ok, err, _, _ = post_command(ip, {"azimuth": target_az, "elevation": target_el})
+    if err:
+        step(f"❌ comando de movimiento: {err}")
+    else:
+        step(f"▶️ Rotor: moviendo a az {target_az}° / el {target_el}°…")
+        live = st.empty()
+        for _ in range(move_wait_s):
+            time.sleep(1)
+            s = _status_now(ip)
+            if s:
+                n = s.get("navigation", {})
+                live.info(f"az {n.get('azimuth')}° / el {n.get('elevation')}°")
+        s = _status_now(ip)
+        n = s.get("navigation", {}) if s else {}
+        step(f"✅ Rotor tras {move_wait_s}s: az {n.get('azimuth', '—')}° / el {n.get('elevation', '—')}°")
+
+    # 5. Homming (vuelta a posición de origen)
+    ok, err = post_simple(ip, "homming")
+    step("▶️ Homming enviado — el rotor vuelve a origen" if ok else f"❌ homming: {err}")
+    time.sleep(min(move_wait_s, 5))
+
+    # 6. Hard-stop final: estado seguro garantizado
+    ok, err = post_simple(ip, "hard-stop")
+    step("✅ Hard-stop final: bandas OFF, rotor detenido — equipo en estado seguro"
+         if ok else f"❌ hard-stop final: {err}")
+    return log
+
+
+def render_demo_tab():
+    ip = st.session_state.device_ip
+
+    st.subheader("Stress test HTTP")
+    st.caption(
+        "Regresión de los 502 intermitentes (read-only: solo GET /status, no mueve nada). "
+        "Cerrá otros clientes y pausá el auto-refresh antes de correr — compiten por los "
+        "4 sockets del W5100 y ensucian la medición."
+    )
+    if st.button("Correr stress test (~20 s)", use_container_width=True):
+        with st.spinner("Corriendo burst + stall…"):
+            proc = subprocess.run(
+                [sys.executable, str(Path(__file__).parent / "tools" / "http_stress.py"), ip],
+                capture_output=True, text=True, timeout=120,
+            )
+        st.session_state.stress_output = (proc.returncode, proc.stdout + proc.stderr)
+    if st.session_state.stress_output:
+        code, out = st.session_state.stress_output
+        (st.success if code == 0 else st.error)("PASS" if code == 0 else "FAIL")
+        st.code(out)
+
+    st.divider()
+
+    st.subheader("Demo completo del dispositivo")
+    st.warning(
+        "⚠️ Esta demo MUEVE el rotor G5500 y ENCIENDE bandas RF reales en secuencia. "
+        "Termina con homming + hard-stop (todo OFF)."
+    )
+    # ponytail: knob de espera — la velocidad real del rotor no se puede modelar, se calibra
+    move_wait = st.number_input("Espera por movimiento del rotor (s)", 2, 30, 8)
+    armed = st.checkbox("Entiendo que el equipo va a moverse y emitir RF")
+    if st.button("Ejecutar demo completa", type="primary",
+                 disabled=not armed, use_container_width=True):
+        with st.status("Demo en curso…", expanded=True) as box:
+            log = run_full_demo(ip, int(move_wait))
+            failed = any(l.startswith("❌") for l in log)
+            box.update(label="Demo con errores" if failed else "Demo completada",
+                       state="error" if failed else "complete")
+        st.session_state.demo_log = log
+    elif st.session_state.demo_log:
+        st.caption("Último resultado:")
+        for line in st.session_state.demo_log:
+            st.write(line)
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -502,15 +638,19 @@ def main():
 
     st.title("RF Inhibitor Control Panel")
 
-    left_col, right_col = st.columns([3, 2])
+    tab_control, tab_demo = st.tabs(["Control", "Demo"])
 
-    with left_col:
-        render_status_section()
+    with tab_control:
+        left_col, right_col = st.columns([3, 2])
+        with left_col:
+            render_status_section()
+        with right_col:
+            render_control_panel()
 
-    with right_col:
-        render_control_panel()
+    with tab_demo:
+        render_demo_tab()
 
-    # Auto-refresh
+    # Auto-refresh (nota: el rerun vuelve al tab Control — pausalo para usar Demo)
     if st.session_state.auto_refresh:
         time.sleep(st.session_state.refresh_interval)
         st.rerun()
