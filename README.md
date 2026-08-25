@@ -676,6 +676,11 @@ Suite de regresión (`tools/http_stress.py`) que reproduce las condiciones que h
 
 ### Qué prueba
 
+| Test | Qué simula | Qué demuestra | Criterio de PASS |
+|------|-----------|---------------|------------------|
+| **Burst** | 4 `GET /status` lanzados en el mismo instante (techo físico: 4 sockets del W5100) | Que siempre hay un socket LISTEN disponible y ningún SYN se pierde, aunque lleguen conexiones simultáneas | 4/4 respuestas `200` |
+| **Stall** | Un cliente envía un request incompleto y se queda callado, mientras 4 sondas consultan `/status` en paralelo | Que un cliente atascado no bloquea al resto (concurrencia) y que se lo corta con una respuesta HTTP real, no con un cierre mudo | Staller recibe `408` en `<1 s`; las 4 sondas `200` en `<1 s` **durante** el atasco |
+
 **[1] Burst — 4 conexiones simultáneas.** Lanza 4 `GET /status` en el mismo instante, el techo físico del chip Ethernet: el W5100 tiene solo 4 sockets de hardware (1 en servicio + 1 LISTEN + 2 en cola). Como el firmware re-abre el LISTEN en cada iteración de `loop()` (~1 ms), ninguna conexión debe perderse. Respuestas en `<0.9 s` entraron directo a un socket libre; respuestas en ~1/2/4 s fueron encoladas por hardware y servidas tras un reintento SYN estándar del OS del cliente (normal, no es pérdida).
 
 **[2] Stall — cliente atascado + sondas concurrentes.** Un cliente envía un request incompleto (sin la línea en blanco final) y se queda callado, mientras 4 sondas piden `/status` a t+0.2/0.4/0.6/0.8 s. El firmware debe:
