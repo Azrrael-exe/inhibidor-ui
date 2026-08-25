@@ -36,12 +36,19 @@ Los endpoints `GET /status`, `POST /set-navigation-and-power`, `POST /config/net
 
 ### GET /version
 
-Identifica el firmware que corre la unidad: commit de git con el que se compiló (sufijo `-dirty` si había cambios sin commitear) y fecha/hora de compilación. Úsalo antes de diagnosticar cualquier problema para descartar firmware desactualizado.
+Identifica el firmware que corre la unidad. Úsalo antes de diagnosticar cualquier problema para descartar firmware desactualizado.
 
 ```bash
 curl http://<ip>/version
-# {"commit":"bf158eb","built":"Aug 21 2026 10:15:32"}
+# {"commit":"9d4caba","built":"Aug 24 2026 19:32:14"}
 ```
+
+| Campo | Descripción |
+|-------|-------------|
+| `commit` | Hash corto del commit de git con el que se compiló el firmware (inyectado por `build_flags` en `platformio.ini`). Sufijo `-dirty` si el working tree tenía cambios sin commitear al compilar; `unknown` si se compiló fuera de un repo git. |
+| `built` | Fecha y hora de compilación (`__DATE__ __TIME__` del compilador, hora local de la máquina que compiló — no del dispositivo). |
+
+Este endpoint no existe en firmware anterior a `9d4caba`: un `404 Not Found` también es información — significa firmware viejo, anterior al fix de los 502 intermitentes (`f08be61`), y hay que reflashear.
 
 ---
 
