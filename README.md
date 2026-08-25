@@ -670,6 +670,42 @@ En el panel lateral (sidebar) se puede ajustar:
 
 ---
 
+## Stress test del WebServer
+
+Suite de regresión (`tools/http_stress.py`) que reproduce las condiciones que históricamente causaban los **502 intermitentes** detrás de un proxy: SYN descartado por falta de socket LISTEN, cierre mudo sin respuesta HTTP, y cola bloqueada por un cliente atascado. Es **read-only**: solo usa `GET /status` con socket crudo — nunca ejecuta POSTs, así que es seguro correrlo contra un equipo en producción (no mueve el rotor ni toca bandas RF).
+
+### Qué prueba
+
+**[1] Burst — 4 conexiones simultáneas.** Lanza 4 `GET /status` en el mismo instante, el techo físico del chip Ethernet: el W5100 tiene solo 4 sockets de hardware (1 en servicio + 1 LISTEN + 2 en cola). Como el firmware re-abre el LISTEN en cada iteración de `loop()` (~1 ms), ninguna conexión debe perderse. Respuestas en `<0.9 s` entraron directo a un socket libre; respuestas en ~1/2/4 s fueron encoladas por hardware y servidas tras un reintento SYN estándar del OS del cliente (normal, no es pérdida).
+
+**[2] Stall — cliente atascado + sondas concurrentes.** Un cliente envía un request incompleto (sin la línea en blanco final) y se queda callado, mientras 4 sondas piden `/status` a t+0.2/0.4/0.6/0.8 s. El firmware debe:
+- cortar al atascado con un **`408` explícito en ~0.5 s** (`WS_CLIENT_TIMEOUT_MS`) — un cierre sin respuesta es exactamente lo que un proxy traduce a 502;
+- seguir sirviendo a las sondas **durante** el atasco (200 en `<1 s`).
+
+**[3] Veredicto.** `PASS` solo si el burst fue 4/4 con 200, el staller recibió 408 en `<1 s` y todas las sondas respondieron durante el atasco. Cualquier otra combinación imprime el diagnóstico probable (firmware sin fix, timeout viejo de 3 s, cola mono-cliente, crash/reboot) y sale con código ≠ 0.
+
+### Cómo ejecutarlo
+
+```bash
+# Opción recomendada: deja reporte con timestamp en reports/
+make stress                    # contra el default (192.168.1.93)
+make stress IP=192.168.1.50    # contra otro equipo
+
+# Directo, sin reporte:
+python3 tools/http_stress.py 192.168.1.50
+```
+
+Paso a paso:
+
+1. Verificá el firmware del equipo: `curl http://<ip>/version` (un `404` = firmware viejo, el test va a fallar; reflashear primero).
+2. Asegurate de que **nadie más esté consultando el equipo** durante el test (cerrá la UI de Streamlit y cualquier poller): clientes concurrentes compiten por los 4 sockets y ensucian las mediciones.
+3. Corré `make stress IP=<ip>`. No requiere dependencias: solo Python 3 stdlib.
+4. Leé el veredicto al final. `PASS` → reporte guardado en `reports/stress-<timestamp>.txt`, exit code 0. `FAIL` → seguí el diagnóstico impreso; el primer paso suele ser `curl http://<ip>/debug/sockets`, que devuelve `[SnSR, puerto, bytes RX]` de los 4 sockets del W5100 (`SnSR`: 0=CLOSED, 20=LISTEN, 23=ESTABLISHED, 28=CLOSE_WAIT).
+
+Cuándo correrlo: después de cualquier cambio en `lib/WebServer/`, en el manejo de Ethernet de `src/main.cpp`, o ante un reporte de 502/timeouts en campo.
+
+---
+
 ## Configuraciones por defecto del dispositivo
 
 Resumen de los valores con los que el firmware levanta al boot. Se distinguen tres tipos:
